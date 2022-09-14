@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+xsi:noNamespaceSchemaLocation="urn:magento:framework:ObjectManager/etc/config.xsd">
+    <preference for="Magento\Catalog\Api\Data\CategoryInterface"
+    type="Hummingbird\Humage\MagentoU\MyCategory" />
+
+    <type name="Hummingbird\Humage\MagentoU\Test">
+    <arguments>
+        <argument name="string_param" xsi:type="string">Hello world from inside the magento!</argument>
+    
+        <argument name="arr" xsi:type="array">
+            <item name="1" xsi:type="string">Blue</item>
+            <item name="2" xsi:type="string">Black</item>
+            <item name="3" xsi:type="string">Red</item>
+    </argument>
+
+</arguments>
+</type>
+</config>
+
