@@ -15,6 +15,6 @@ class LogProductHtml implements ObserverInterface{
     
     
     public function execute(Observer $observer){
-        $this->_logger->info("PRODUCT LOG HTML: " . substr($observer->getData('response')->getBody(),0,20));
+        $this->_logger->info("PRODUCT LOG HTML: " . substr($observer->getData('response')->getBody(),0,700));
     }
 }
