@@ -349,6 +349,7 @@ return [
         'Hummingbird_Module5' => 1,
         'PayPal_Braintree' => 1,
         'PayPal_BraintreeGraphQl' => 1,
+        'StripeIntegration_Payments' => 1,
         'Temando_ShippingRemover' => 1,
         'Unit1_Test' => 1,
         'Unit1_Test2' => 1
