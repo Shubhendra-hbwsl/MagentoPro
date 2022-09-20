@@ -348,6 +348,7 @@ return [
         'Hummingbird_Humage' => 1,
         'Hummingbird_Module4' => 1,
         'Hummingbird_Module5' => 1,
+        'Hummingbird_Module6' => 1,
         'PayPal_Braintree' => 1,
         'PayPal_BraintreeGraphQl' => 1,
         'StripeIntegration_Payments' => 1,
