@@ -15,6 +15,7 @@ class MyAction implements HttpGetActionInterface{
     }
 
     public function execute(){
+        // SELF NOTE: change type to TYPE::RAW
         $result = $this->_resultFactory->create(ResultFactory::TYPE_REDIRECT);
         
         

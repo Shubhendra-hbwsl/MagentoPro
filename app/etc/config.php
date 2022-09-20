@@ -344,6 +344,7 @@ return [
         'Magento_WishlistAnalytics' => 1,
         'Magento_WishlistGraphQl' => 1,
         'Magento_WishlistSampleData' => 1,
+        'Akeneo_Connector' => 1,
         'Hummingbird_Humage' => 1,
         'Hummingbird_Module4' => 1,
         'Hummingbird_Module5' => 1,
