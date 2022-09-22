@@ -77,7 +77,7 @@ return [
         'a.magento.com'
     ],
     'install' => [
-        'date' => 'Thu, 01 Sep 2022 09:07:41 +0000'
+        'date' => 'Wed, 21 Sep 2022 02:45:59 +0000'
     ],
     'system' => [
         'default' => [

@@ -1,0 +1,211 @@
+{
+    "stripe_customers": {
+        "column": {
+            "id": true,
+            "customer_id": true,
+            "stripe_id": true,
+            "last_retrieved": true,
+            "customer_email": true,
+            "session_id": true,
+            "pk": true
+        },
+        "index": {
+            "STRIPE_CUSTOMERS_PK": true,
+            "STRIPE_CUSTOMERS_STRIPE_ID": true,
+            "STRIPE_CUSTOMERS_CUSTOMER_ID": true,
+            "STRIPE_CUSTOMERS_CUSTOMER_EMAIL": true,
+            "STRIPE_CUSTOMERS_SESSION_ID": true
+        },
+        "constraint": {
+            "PRIMARY": true
+        }
+    },
+    "stripe_webhooks": {
+        "column": {
+            "id": true,
+            "config_version": true,
+            "webhook_id": true,
+            "publishable_key": true,
+            "store_code": true,
+            "live_mode": true,
+            "active": true,
+            "last_event": true,
+            "api_version": true,
+            "url": true,
+            "enabled_events": true,
+            "secret": true,
+            "created_at": true
+        },
+        "constraint": {
+            "PRIMARY": true
+        }
+    },
+    "stripe_sources": {
+        "column": {
+            "id": true,
+            "source_id": true,
+            "order_increment_id": true,
+            "stripe_customer_id": true
+        },
+        "index": {
+            "STRIPE_SOURCES_SOURCE_ID": true,
+            "STRIPE_SOURCES_ORDER_INCREMENT_ID": true,
+            "STRIPE_SOURCES_STRIPE_CUSTOMER_ID": true
+        },
+        "constraint": {
+            "PRIMARY": true
+        }
+    },
+    "stripe_subscriptions": {
+        "column": {
+            "id": true,
+            "created_at": true,
+            "store_id": true,
+            "livemode": true,
+            "subscription_id": true,
+            "order_increment_id": true,
+            "product_id": true,
+            "magento_customer_id": true,
+            "stripe_customer_id": true,
+            "payment_method_id": true,
+            "name": true,
+            "quantity": true,
+            "currency": true,
+            "grand_total": true,
+            "is_new": true
+        },
+        "index": {
+            "STRIPE_SUBSCRIPTIONS_SUBSCRIPTION_ID": true,
+            "STRIPE_SUBSCRIPTIONS_STORE_ID": true,
+            "STRIPE_SUBSCRIPTIONS_LIVEMODE": true,
+            "STRIPE_SUBSCRIPTIONS_STRIPE_CUSTOMER_ID": true,
+            "STRIPE_SUBSCRIPTIONS_MAGENTO_CUSTOMER_ID": true,
+            "STRIPE_SUBSCRIPTIONS_PRODUCT_ID": true,
+            "STRIPE_SUBSCRIPTIONS_CREATED_AT": true,
+            "STRIPE_SUBSCRIPTIONS_IS_NEW": true,
+            "STRIPE_SUBSCRIPTIONS_ORDER_INCREMENT_ID": true
+        },
+        "constraint": {
+            "PRIMARY": true
+        }
+    },
+    "stripe_coupons": {
+        "column": {
+            "id": true,
+            "rule_id": true,
+            "coupon_duration": true,
+            "coupon_months": true
+        },
+        "constraint": {
+            "PRIMARY": true
+        }
+    },
+    "stripe_invoices": {
+        "column": {
+            "id": true,
+            "invoice_id": true,
+            "order_increment_id": true
+        },
+        "index": {
+            "STRIPE_INVOICES_INVOICE_ID": true,
+            "STRIPE_INVOICES_ORDER_INCREMENT_ID": true
+        },
+        "constraint": {
+            "PRIMARY": true
+        }
+    },
+    "stripe_payment_intents": {
+        "column": {
+            "pi_id": true,
+            "quote_id": true,
+            "order_increment_id": true,
+            "invoice_id": true,
+            "customer_id": true,
+            "order_id": true,
+            "pm_id": true,
+            "created_at": true
+        },
+        "index": {
+            "STRIPE_PAYMENT_INTENTS_PI_ID": true,
+            "STRIPE_PAYMENT_INTENTS_QUOTE_ID": true,
+            "STRIPE_PAYMENT_INTENTS_ORDER_INCREMENT_ID": true,
+            "STRIPE_PAYMENT_INTENTS_ORDER_ID": true,
+            "STRIPE_PAYMENT_INTENTS_CUSTOMER_ID": true,
+            "STRIPE_PAYMENT_INTENTS_PM_ID": true
+        },
+        "constraint": {
+            "PRIMARY": true
+        }
+    },
+    "stripe_checkout_sessions": {
+        "column": {
+            "id": true,
+            "quote_id": true,
+            "order_increment_id": true,
+            "checkout_session_id": true,
+            "created_at": true
+        },
+        "index": {
+            "STRIPE_CHECKOUT_SESSIONS_QUOTE_ID": true,
+            "STRIPE_CHECKOUT_SESSIONS_CHECKOUT_SESSION_ID": true
+        },
+        "constraint": {
+            "PRIMARY": true
+        }
+    },
+    "stripe_payment_elements": {
+        "column": {
+            "id": true,
+            "quote_id": true,
+            "payment_intent_id": true,
+            "setup_intent_id": true,
+            "subscription_id": true,
+            "payment_method_id": true,
+            "order_increment_id": true,
+            "created_at": true
+        },
+        "index": {
+            "STRIPE_PAYMENT_ELEMENTS_QUOTE_ID": true,
+            "STRIPE_PAYMENT_ELEMENTS_ORDER_INCREMENT_ID": true
+        },
+        "constraint": {
+            "PRIMARY": true
+        }
+    },
+    "stripe_multishipping_quotes": {
+        "column": {
+            "id": true,
+            "quote_id": true,
+            "payment_method_id": true,
+            "payment_intent_id": true,
+            "manual_capture": true,
+            "captured": true,
+            "warning_email_sent": true,
+            "created_at": true
+        },
+        "index": {
+            "STRIPE_MULTISHIPPING_QUOTES_QUOTE_ID": true,
+            "STRIPE_MULTISHIPPING_QUOTES_PAYMENT_INTENT_ID": true,
+            "STRIPE_MULTISHIPPING_QUOTES_MANUAL_CAPTURE": true,
+            "STRIPE_MULTISHIPPING_QUOTES_CREATED_AT": true
+        },
+        "constraint": {
+            "PRIMARY": true
+        }
+    },
+    "stripe_multishipping_orders": {
+        "column": {
+            "id": true,
+            "quote_id": true,
+            "order_id": true,
+            "last_error": true
+        },
+        "index": {
+            "STRIPE_MULTISHIPPING_ORDERS_QUOTE_ID": true,
+            "STRIPE_MULTISHIPPING_ORDERS_ORDER_ID": true
+        },
+        "constraint": {
+            "PRIMARY": true
+        }
+    }
+}

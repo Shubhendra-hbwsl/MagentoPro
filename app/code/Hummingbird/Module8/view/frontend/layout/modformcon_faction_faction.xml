@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<page xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" layout="1column" xsi:noNamespaceSchemaLocation="urn:magento:framework:View/Layout/etc/page_configuration.xsd">
+    <body>
+        <referenceContainer name="content">
+        <!-- Form block -->
+            <block class="Hummingbird\Module8\Block\DataFormBlock" name="module8.dataform" template="Hummingbird_Module8::dataform.phtml">
+            </block>
+            
+            <!-- Data Table block -->
+            <block class="Hummingbird\Module8\Block\DataViewBlock" name="module8.dataview" template="Hummingbird_Module8::dataview.phtml">
+            </block>
+        </referenceContainer>
+    </body>
+</page> 
