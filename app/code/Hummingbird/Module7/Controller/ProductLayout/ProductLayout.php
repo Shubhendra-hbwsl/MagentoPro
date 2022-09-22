@@ -1,6 +1,6 @@
-<?php
- 
- namespace Hummingbird\Module5\Controller\Product;
+<?php 
+
+namespace Hummingbird\Module7\Controller\ProductLayout;
 
 
 use Magento\Framework\Controller\ResultInterface;
@@ -8,7 +8,7 @@ use Magento\Framework\App\RequestInterface;
 use Magento\Catalog\Api\ProductRepositoryInterface;
 use Magento\Store\Model\StoreManagerInterface;
 
- class MyView {
+ class ProductLayout {
     private $request;
     private $productRepository;
     private $storeManager;
@@ -23,9 +23,6 @@ use Magento\Store\Model\StoreManagerInterface;
         $this->storeManager = $storeManager;
     }
 
-    // DEBUG:
-    // get product by id from product repository and then check if it's price is less than $30, if it is then change the layout
-    // to be displayed 2 columns right. 
     public function afterExecute(\Magento\Catalog\Controller\Product\View $subject, $resultPage)
     {
         if ($resultPage instanceof ResultInterface)
@@ -34,11 +31,11 @@ use Magento\Store\Model\StoreManagerInterface;
             if ($productId)
             {
                     $product = $this->productRepository->getById($productId, false, $this->storeManager->getStore()->getId());
-                    if ($product->getFinalPrice() <= 30)
+                    if ($product)
                     {
-                        // TODO: maybe change the title or something for this user story, this is overriden by module7
+                        // DEBUG: this will override the custom layout set to 2 columns right in module 5 for product view page
                         $pageConfig = $resultPage->getConfig();
-                        $pageConfig->setPageLayout('2columns-right'); 
+                        $pageConfig->setPageLayout('3columns'); 
                     }
             }
         }
