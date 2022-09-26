@@ -351,6 +351,7 @@ return [
         'Hummingbird_Module6' => 1,
         'Hummingbird_Module7' => 1,
         'Hummingbird_Module8' => 1,
+        'Hummingbird_Module9' => 1,
         'PayPal_Braintree' => 1,
         'PayPal_BraintreeGraphQl' => 1,
         'StripeIntegration_Payments' => 1,
