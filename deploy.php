@@ -11,12 +11,6 @@ set('release_name', function () {
 set('magento_dir', '.');
 set('repository', 'git@github.com:Shubhendra-hbwsl/MagentoPro.git');
 set('languages', 'en_US');
+set('keep_releases', 3);
 set('default_timeout', 900);
-
-set('shared_files', [
-    'app/etc/env.php',
-    'pub/sitemap.xml',
-    'var/.maintenance.ip',
-]);
-
 inventory("hosts.yml");
