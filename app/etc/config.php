@@ -348,7 +348,7 @@ return [
         'Hummingbird_Humage' => 1,
         'Hummingbird_Module4' => 0,
         'Hummingbird_Module5' => 1,
-        'Hummingbird_Module6' => 1,
+        'Hummingbird_Module6' => 0,
         'Hummingbird_Module7' => 1,
         'Hummingbird_Module8' => 1,
         'Hummingbird_Module9' => 1,
@@ -356,8 +356,8 @@ return [
         'PayPal_BraintreeGraphQl' => 1,
         'StripeIntegration_Payments' => 1,
         'Temando_ShippingRemover' => 1,
-        'Unit1_Test' => 1,
-        'Unit1_Test2' => 1
+        'Unit1_Test' => 0,
+        'Unit1_Test2' => 0
     ],
     'scopes' => [
         'websites' => [
