@@ -16,6 +16,9 @@ class InitialFee extends \Magento\Sales\Model\Order\Total\AbstractTotal
     }
 
     /**
+     * @param Quote $quote
+     * @param ShippingAssignmentInterface $shippingAssignment
+     * @param Total $total
      * @return $this
      */
     public function collect(
@@ -23,9 +26,9 @@ class InitialFee extends \Magento\Sales\Model\Order\Total\AbstractTotal
     ) {
         $baseAmount = $this->helper->getTotalInitialFeeForCreditmemo($creditmemo, false);
         if (is_numeric($creditmemo->getBaseToOrderRate()))
-            $amount = round(floatval($baseAmount * $creditmemo->getBaseToOrderRate()), 4);
+            $amount = round($baseAmount * $creditmemo->getBaseToOrderRate(), 4);
         else if (is_numeric($creditmemo->getBaseToQuoteRate()))
-            $amount = round(floatval($baseAmount * $creditmemo->getBaseToQuoteRate()), 4);
+            $amount = round($baseAmount * $creditmemo->getBaseToQuoteRate(), 4);
         else
             $amount = $baseAmount;
 

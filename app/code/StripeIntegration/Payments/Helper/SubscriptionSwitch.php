@@ -50,7 +50,7 @@ class SubscriptionSwitch
 
         $params = ['limit' => 100];
         $customerId = $order->getPayment()->getAdditionalInformation("customer_stripe_id");
-        if (!empty($customerId))
+        if (!empty($customer))
             $params["customer"] = $customerId;
 
         $subscriptions = \StripeIntegration\Payments\Model\Config::$stripeClient->subscriptions->all($params);

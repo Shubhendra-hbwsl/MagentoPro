@@ -6,11 +6,6 @@ use Magento\Checkout\Model\Session as CheckoutSession;
 use Magento\Checkout\Model\SessionFactory as CheckoutSessionFactory;
 use PHPUnit\Framework\Constraint\StringContains;
 
-/**
- * Magento 2.3.7-p3 does not enable these at class level
- * @magentoAppIsolation enabled
- * @magentoDbIsolation enabled
- */
 class PlaceOrderTest extends \PHPUnit\Framework\TestCase
 {
     public function setUp(): void
@@ -73,17 +68,8 @@ class PlaceOrderTest extends \PHPUnit\Framework\TestCase
 
         // Refresh the order object
         $order = $this->tests->refreshOrder($order);
-        if ($this->tests->magento("<", "2.4"))
-        {
-            // Magento 2.3.7 should not close the order because the free item has not been shipped yet
-            $this->assertEquals("closed", $order->getState());
-            $this->assertEquals("closed", $order->getStatus());
-        }
-        else
-        {
-            $this->assertEquals("complete", $order->getState());
-            $this->assertEquals("complete", $order->getStatus());
-        }
+        $this->assertEquals("complete", $order->getState());
+        $this->assertEquals("complete", $order->getStatus());
         $this->assertEquals(0, $order->getTotalPaid());
         $this->assertEquals(10.83, $order->getTotalDue());
 
@@ -108,19 +94,26 @@ class PlaceOrderTest extends \PHPUnit\Framework\TestCase
         $invoice = $invoicesCollection->getFirstItem();
 
         $this->assertEquals(2, count($invoice->getAllItems()));
-        $this->assertEquals(\Magento\Sales\Model\Order\Invoice::STATE_OPEN, $invoice->getState());
+        $this->assertEquals(\Magento\Sales\Model\Order\Invoice::STATE_PAID, $invoice->getState());
         $this->assertEquals("cannot_capture_subscriptions", $invoice->getTransactionId());
-        $this->assertEquals(0, $order->getTotalPaid());
-        $this->assertEquals($order->getGrandTotal(), $order->getTotalDue());
+        $this->assertEquals(10.83, $order->getTotalPaid());
+        $this->assertEquals(0, $order->getTotalDue());
 
         // Check that the transaction IDs have been associated with the order
         $transactions = $this->helper->getOrderTransactions($order);
-        $this->assertEquals(1, count($transactions));
+        $this->assertEquals(2, count($transactions));
         foreach ($transactions as $key => $transaction)
         {
-            $this->assertEquals("cannot_capture_subscriptions", $transaction->getTxnId());
-            $this->assertEquals("authorization", $transaction->getTxnType());
-            $this->assertEmpty($transaction->getAdditionalInformation("amount"));
+            if ($transaction->getTxnId() == "cannot_capture_subscriptions") // Trial subscription creation time
+            {
+                $this->assertEmpty($transaction->getAdditionalInformation("amount"));
+            }
+            else // Trial expiration
+            {
+                $this->assertEquals($subscription->latest_invoice->payment_intent, $transaction->getTxnId());
+                $this->assertEquals("capture", $transaction->getTxnType());
+                $this->assertEquals(10.83, $transaction->getAdditionalInformation("amount"));
+            }
         }
 
         // Check the newly created order
@@ -129,7 +122,7 @@ class PlaceOrderTest extends \PHPUnit\Framework\TestCase
         $this->assertEquals("complete", $newOrder->getState());
         $this->assertEquals("complete", $newOrder->getStatus());
         $this->assertEquals(10.83, $newOrder->getGrandTotal());
-        $this->assertEquals($newOrder->getGrandTotal(), $newOrder->getTotalPaid());
+        $this->assertEquals(10.83, $newOrder->getTotalPaid());
         $this->assertEquals(1, $newOrder->getInvoiceCollection()->getSize());
     }
 }

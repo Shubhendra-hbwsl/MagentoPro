@@ -10,7 +10,6 @@ class StripeCustomer extends \Magento\Framework\Model\AbstractModel
     // This is the Customer object, retrieved through the Stripe API
     var $_stripeCustomer = null;
     var $_defaultPaymentMethod = null;
-    var $_subscriptions = [];
 
     public $customerCard = null;
     public $paymentMethodsCache = [];
@@ -39,8 +38,22 @@ class StripeCustomer extends \Magento\Framework\Model\AbstractModel
         $this->helper = $helper;
         $this->addressHelper = $addressHelper;
         $this->paymentMethodHelper = $paymentMethodHelper;
-        $this->sessionManager = $sessionManager;
-        $this->customerSession = $customerSession;
+        $this->_customerSession = $customerSession;
+        $this->_sessionManager = $sessionManager;
+        $this->_registry = $registry;
+        $this->_appState = $context->getAppState();
+        $this->_eventManager = $context->getEventDispatcher();
+        $this->_cacheManager = $context->getCacheManager();
+        $this->_resource = $resource;
+        $this->_resourceCollection = $resourceCollection;
+        $this->_logger = $context->getLogger();
+        $this->_actionValidator = $context->getActionValidator();
+
+        if (method_exists($this->_resource, 'getIdFieldName')
+            || $this->_resource instanceof \Magento\Framework\DataObject
+        ) {
+            $this->_idFieldName = $this->_getResource()->getIdFieldName();
+        }
 
         parent::__construct($context, $registry, $resource, $resourceCollection, $data); // This will also call _construct after DI logic
     }
@@ -78,7 +91,7 @@ class StripeCustomer extends \Magento\Framework\Model\AbstractModel
         if (!$this->getStripeId()) return;
         if ($this->helper->isAdmin()) return;
 
-        $sessionId = $this->customerSession->getSessionId();
+        $sessionId = $this->_customerSession->getSessionId();
         if ($sessionId != $this->getSessionId())
         {
             $this->setSessionId($sessionId);
@@ -94,30 +107,23 @@ class StripeCustomer extends \Magento\Framework\Model\AbstractModel
         // $paymentMethod = $quote->getPayment()->getMethod();
         // if (empty($paymentMethod) || $paymentMethod != "stripe_payments") return;
 
-        if (!$this->existsInStripe($skipCache))
+        $retrievedSecondsAgo = (time() - $this->getLastRetrieved());
+
+        if (!$this->getStripeId())
         {
             $this->createStripeCustomer($order);
         }
-
-        return $this->retrieveByStripeID();
-    }
-
-    public function existsInStripe($skipCache = false)
-    {
-        if (!$this->getStripeId())
-            return false;
-
-        $retrievedSecondsAgo = (time() - $this->getLastRetrieved());
-
         // if the customer was retrieved from Stripe in the last 10 minutes, we're good to go
         // otherwise retrieve them now to make sure they were not deleted from Stripe somehow
-        if (!$skipCache && $retrievedSecondsAgo < (60 * 10))
-            return true;
+        else if ($retrievedSecondsAgo > (60 * 10) || $skipCache)
+        {
+            if (!$this->retrieveByStripeID($this->getStripeId()))
+            {
+                $this->createStripeCustomer($order);
+            }
+        }
 
-        if (!$this->retrieveByStripeID($this->getStripeId()))
-            return false;
-
-        return true;
+        return $this->retrieveByStripeID();
     }
 
     public function createStripeCustomer($order = null, $extraParams = null)
@@ -211,9 +217,9 @@ class StripeCustomer extends \Magento\Framework\Model\AbstractModel
                 {
                     $this->_stripeCustomer = $this->config->getStripeClient()->customers->update($stripeCustomerId, $params);
                 }
-                catch (\Stripe\Exception\ApiErrorException $e)
+                catch (\Exception $e)
                 {
-                    if ($e->getError()->code == "resource_missing")
+                    if ($e->getStripeCode() == "resource_missing")
                         $this->_stripeCustomer = \Stripe\Customer::create($params);
                 }
             }
@@ -225,7 +231,7 @@ class StripeCustomer extends \Magento\Framework\Model\AbstractModel
             if (!$this->_stripeCustomer)
                 return null;
 
-            $this->sessionManager->setStripeCustomerId($this->_stripeCustomer->id);
+            $this->_sessionManager->setStripeCustomerId($this->_stripeCustomer->id);
 
             $this->setStripeId($this->_stripeCustomer->id);
             $this->setCustomerId($magentoCustomerId);
@@ -287,7 +293,7 @@ class StripeCustomer extends \Magento\Framework\Model\AbstractModel
 
         try
         {
-            $this->_stripeCustomer = $this->config->getStripeClient()->customers->retrieve($id, []);
+            $this->_stripeCustomer = \Stripe\Customer::retrieve($id);
             $this->setLastRetrieved(time());
             $this->save();
 
@@ -321,7 +327,7 @@ class StripeCustomer extends \Magento\Framework\Model\AbstractModel
         }
     }
 
-    public function deletePaymentMethod($token, $fingerprint = null)
+    public function deletePaymentMethod($token)
     {
         if (!$this->_stripeCustomer)
             $this->_stripeCustomer = $this->retrieveByStripeID($this->getStripeId());
@@ -332,37 +338,13 @@ class StripeCustomer extends \Magento\Framework\Model\AbstractModel
         // Deleting a payment method
         if (strpos($token, "pm_") === 0)
         {
-            if ($fingerprint)
-            {
-                $allMethods = $this->getSavedPaymentMethods(null, false);
-                $newestMethod = null;
-                foreach ($allMethods as $type => $methodList)
-                {
-                    foreach ($methodList as $method)
-                    {
-                        $type = $method->type;
-                        if ($method->{$type}->fingerprint != $fingerprint)
-                            continue;
-
-                        if (!$newestMethod || $method->created > $newestMethod->created)
-                        {
-                            $newestMethod = $this->config->getStripeClient()->paymentMethods->detach($method->id, []);
-                        }
-                        else
-                        {
-                            $this->config->getStripeClient()->paymentMethods->detach($method->id, []);
-                        }
-                    }
-                }
-
-                return $newestMethod;
-            }
-            else
-            {
-                return $this->config->getStripeClient()->paymentMethods->detach($token, []);
-            }
+            return $this->config->getStripeClient()->paymentMethods->detach($token, []);
         }
         else if (strpos($token, "src_") === 0 || strpos($token, "card_") === 0)
+        {
+            return $this->config->getStripeClient()->customers->deleteSource($this->getStripeId(), $token);
+        }
+        else if (strpos($token, "src_") === 0)
         {
             return $this->config->getStripeClient()->customers->deleteSource($this->getStripeId(), $token);
         }
@@ -402,7 +384,14 @@ class StripeCustomer extends \Magento\Framework\Model\AbstractModel
     {
         if (!$types)
         {
-            $types = \StripeIntegration\Payments\Helper\PaymentMethod::CAN_BE_SAVED_ON_SESSION;
+            $types = [
+                'card',
+                'alipay',
+                'au_becs_debit',
+                'boleto',
+                'acss_debit',
+                'sepa_debit',
+            ];
         }
 
         if (!$this->getStripeId())
@@ -412,28 +401,15 @@ class StripeCustomer extends \Magento\Framework\Model\AbstractModel
 
         foreach ($types as $type)
         {
-            try
-            {
-                $result = $this->config->getStripeClient()->customers->allPaymentMethods($this->getStripeId(), ['type' => $type]);
-                if (!empty($result->data))
-                {
-                    $methods[$type] = $result->data;
-                }
-            }
-            catch (\Exception $e)
-            {
-                $this->helper->logError("Cannot retrieve saved payment methods for customer {$this->getStripeId()}: " . $e->getMessage());
-            }
+            $result = $this->config->getStripeClient()->customers->allPaymentMethods($this->getStripeId(), ['type' => $type]);
+            if (!empty($result->data))
+                $methods[$type] = $result->data;
         }
 
         if ($formatted)
-        {
             return $this->paymentMethodHelper->formatPaymentMethods($methods);
-        }
         else
-        {
             return $methods;
-        }
     }
 
     public function getOpenInvoices($params = null)
@@ -482,11 +458,11 @@ class StripeCustomer extends \Magento\Framework\Model\AbstractModel
 
         $collection = \Stripe\Subscription::all($params);
 
+        if (!isset($this->_subscriptions))
+            $this->_subscriptions = [];
+
         foreach ($collection->data as $subscription)
         {
-            if (in_array($subscription->status, ['canceled', 'incomplete', 'incomplete_expired']))
-                continue;
-
             $this->_subscriptions[$subscription->id] = $subscription;
         }
 
@@ -495,7 +471,7 @@ class StripeCustomer extends \Magento\Framework\Model\AbstractModel
 
     public function getSubscription($id)
     {
-        if (!empty($this->_subscriptions[$id]))
+        if (isset($this->_subscriptions) && !empty($this->_subscriptions[$id]))
             return $this->_subscriptions[$id];
 
         return \Stripe\Subscription::retrieve($id);
@@ -519,14 +495,10 @@ class StripeCustomer extends \Magento\Framework\Model\AbstractModel
         return $this->helper->findCardByFingerprint($customer, $pm->card->fingerprint);
     }
 
-    // Creates a customer if they don't exist
-    // Updates a customer if they exist
     public function updateFromOrder($order)
     {
         if (!$this->getStripeId())
-            $this->createStripeCustomerIfNotExists(false, $order);
-
-        $customer = $this->retrieveByStripeID();
+            return;
 
         $data = $this->addressHelper->getStripeAddressFromMagentoAddress($order->getBillingAddress());
 

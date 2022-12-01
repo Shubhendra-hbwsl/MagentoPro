@@ -2,11 +2,6 @@
 
 namespace StripeIntegration\Payments\Test\Integration\Frontend\RedirectFlow\AuthorizeOnly\ManualInvoicing\Normal\StripeDashboard;
 
-/**
- * Magento 2.3.7-p3 does not enable these at class level
- * @magentoAppIsolation enabled
- * @magentoDbIsolation enabled
- */
 class CaptureTest extends \PHPUnit\Framework\TestCase
 {
     public function setUp(): void

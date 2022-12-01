@@ -64,17 +64,14 @@ class ConfigProvider implements ConfigProviderInterface
                 self::CODE => [
                     'enabled' => $this->config->isEnabled(),
                     'initParams' => \Zend_Json::decode($this->initParams->getCheckoutParams(), \Zend\Json\Json::TYPE_ARRAY),
+                    'isWalletButtonEnabled' => $this->expressHelper->isEnabled('checkout_page'),
                     'icons' => $this->getIcons(),
-                    'pmIcons' => $this->paymentMethodHelper->getPaymentMethodDetails(),
+                    'pmIcons' => $this->paymentMethodHelper->getPaymentMethodIcons(),
                     'hasTrialSubscriptions' => false,
                     'trialingSubscriptions' => null,
-                    'module' => Config::module()
-                ],
-                'wallet_button' => [
-                    'enabled' => $this->expressHelper->isEnabled('checkout_page'),
-                    'initParams' => \Zend_Json::decode($this->config->getStripeParams(), \Zend\Json\Json::TYPE_ARRAY),
                     'prapiTitle' => $this->helper->getPRAPIMethodType(),
-                    'buttonConfig' => $this->config->getPRAPIButtonSettings(),
+                    'prapiButtonConfig' => $this->config->getPRAPIButtonSettings(),
+                    'module' => Config::module()
                 ]
             ]
         ];

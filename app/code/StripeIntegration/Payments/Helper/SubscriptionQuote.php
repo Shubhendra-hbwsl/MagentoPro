@@ -77,19 +77,19 @@ class SubscriptionQuote
         if ($order->getBaseToQuoteRate())
         {
             $quote->setBaseToQuoteRate($order->getBaseToQuoteRate());
-            $currentCurrencyToBaseCurrencyRate = round(1 / floatval($order->getBaseToQuoteRate()), 4);
+            $currentCurrencyToBaseCurrencyRate = round(1 / $order->getBaseToQuoteRate(), 4);
         }
         if ($order->getBaseToOrderRate())
         {
             $quote->setBaseToOrderRate($order->getBaseToOrderRate());
-            $currentCurrencyToBaseCurrencyRate = round(1 / floatval($order->getBaseToOrderRate()), 4);
+            $currentCurrencyToBaseCurrencyRate = round(1 / $order->getBaseToOrderRate(), 4);
         }
 
         if (empty($customPrice))
             $customPrice = $store->getBaseCurrency()->convert($baseCustomPrice, $currency);
 
         if (empty($baseCustomPrice))
-            $baseCustomPrice = round(floatval($customPrice) * floatval($currentCurrencyToBaseCurrencyRate), 4);
+            $baseCustomPrice = round($customPrice * $currentCurrencyToBaseCurrencyRate, 4);
 
         // Set quote items
         $productModel = $this->productFactory->create()->load($productId);

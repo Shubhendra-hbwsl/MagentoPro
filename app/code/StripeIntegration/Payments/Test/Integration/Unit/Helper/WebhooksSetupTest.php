@@ -2,11 +2,6 @@
 
 namespace StripeIntegration\Payments\Test\Integration\Unit\Helper;
 
-/**
- * Magento 2.3.7-p3 does not enable these at class level
- * @magentoAppIsolation enabled
- * @magentoDbIsolation enabled
- */
 class WebhooksSetupTest extends \PHPUnit\Framework\TestCase
 {
     public function setUp(): void
@@ -24,8 +19,7 @@ class WebhooksSetupTest extends \PHPUnit\Framework\TestCase
     {
         $webhooksSetup = $this->objectManager->get(\StripeIntegration\Payments\Helper\WebhooksSetup::class);
 
-        $oldWebhookModels = $webhooksSetup->getConfiguredWebhooks();
-        $configurations = $webhooksSetup->createMissingWebhooks($oldWebhookModels);
+        $configurations = $webhooksSetup->createMissingWebhooks();
 
         $this->assertTrue(is_array($configurations));
         $this->assertNotEmpty($configurations);

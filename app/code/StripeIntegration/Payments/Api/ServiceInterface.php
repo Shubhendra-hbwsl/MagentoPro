@@ -179,14 +179,4 @@ interface ServiceInterface
      * @return mixed|null $result
      */
     public function finalize_multishipping_order($quoteId = null, $error = null);
-
-    /**
-     * Returns the params needed to initialize the Payment Element component at the specified site section
-     *
-     * @api
-     * @param string $section
-     *
-     * @return string|null
-     */
-    public function get_init_params($section);
 }

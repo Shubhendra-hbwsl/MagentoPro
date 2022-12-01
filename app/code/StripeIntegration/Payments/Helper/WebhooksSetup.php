@@ -4,7 +4,6 @@ namespace StripeIntegration\Payments\Helper;
 
 use StripeIntegration\Payments\Helper\Logger;
 use StripeIntegration\Payments\Exception\WebhookException;
-use StripeIntegration\Payments\Exception\SilentException;
 
 class WebhooksSetup
 {
@@ -39,8 +38,6 @@ class WebhooksSetup
     public $errorMessages = [];
     public $successMessages = [];
 
-    protected $output = null;
-
     public function __construct(
         \StripeIntegration\Payments\Logger\WebhooksLogger $webhooksLogger,
         \Psr\Log\LoggerInterface $logger,
@@ -65,25 +62,19 @@ class WebhooksSetup
         $this->webhookCollectionFactory = $webhookCollectionFactory;
     }
 
-    public function configure(\Symfony\Component\Console\Output\OutputInterface $output = null)
+    public function configure()
     {
-        $this->output = null;
         $this->errorMessages = [];
         $this->successMessages = [];
 
-        $error = null;
-
-        if (!$this->config->canInitialize($error))
+        if (!$this->config->canInitialize())
         {
-            $this->error($error);
+            $this->error("Unable to configure webhooks because Stripe cannot be initialized");
             return;
         }
-        else
-            $this->config->setAppInfo();
 
-        $oldWebhookModels = $this->getConfiguredWebhooks();
         $this->clearConfiguredWebhooks();
-        $configured = $this->createMissingWebhooks($oldWebhookModels);
+        $configured = $this->createMissingWebhooks();
         $this->addDummyEventTo($configured);
         $this->saveConfiguredWebhooks($configured);
         $this->triggerDummyEvent($configured);
@@ -134,19 +125,6 @@ class WebhooksSetup
         }
     }
 
-    public function getConfiguredWebhooks()
-    {
-        $models = [];
-        $collection = $this->webhookCollectionFactory->create();
-        $webhooks = $collection->getAllWebhooks();
-        foreach ($webhooks as $webhook)
-        {
-            $models[$webhook->getWebhookId()] = $webhook->getData();
-        }
-
-        return $models;
-    }
-
     public function clearConfiguredWebhooks()
     {
         $collection = $this->webhookCollectionFactory->create();
@@ -183,16 +161,9 @@ class WebhooksSetup
 
     public function getValidWebhookUrl($storeId)
     {
-        try
-        {
-            $url = $this->getWebhookUrl($storeId);
-            if ($this->isValidUrl($url))
-                return $url;
-        }
-        catch (\Exception $e)
-        {
-            $this->log("Cannot generate webhooks URL: " . $e->getMessage());
-        }
+        $url = $this->getWebhookUrl($storeId);
+        if ($this->isValidUrl($url))
+            return $url;
 
         return null;
     }
@@ -201,10 +172,6 @@ class WebhooksSetup
     {
         $this->storeManager->setCurrentStore($storeId);
         $url = $this->storeManager->getStore()->getBaseUrl(\Magento\Framework\UrlInterface::URL_TYPE_WEB, true);
-
-        if (empty($url))
-            throw new \Exception("Please configure a store BASE URL.");
-
         $url = filter_var($url, FILTER_SANITIZE_URL);
         $url = rtrim(trim($url), "/");
         $url .= '/stripe/webhooks';
@@ -220,25 +187,16 @@ class WebhooksSetup
         return true;
     }
 
-    public function createMissingWebhooks($oldWebhookModels)
+    public function createMissingWebhooks()
     {
         $configurations = $this->getAllWebhookConfigurations();
         $configured = [];
-
-        $oldWebhookIds = [];
-        foreach ($oldWebhookModels as $id => $oldWebhookModels)
-            $oldWebhookIds[$id] = $id;
 
         foreach ($configurations as $secretKey => &$configuration)
         {
             $webhookUrl = $configuration['url'];
 
-            $oldWebhookEndpoints = [];
-            foreach ($configuration['webhooks'] as $webhook)
-            {
-                if (in_array($webhook->id, $oldWebhookIds))
-                    $oldWebhookEndpoints[] = $webhook;
-            }
+            $oldWebhookEndpoints = $configuration['webhooks'];
 
             // Forget other webhooks which may or may not be related to this Magento installation
             $configuration['webhooks'] = [];
@@ -249,10 +207,7 @@ class WebhooksSetup
             {
                 $webhook = $this->createWebhook($secretKey, $webhookUrl);
                 if ($webhook)
-                {
                     $configuration['webhooks'][] = $webhook;
-                    $this->info("Created new webhook endpoint {$webhook->url} ({$webhook->id})");
-                }
 
                 $configured[] = $configuration;
                 $success = true;
@@ -272,7 +227,7 @@ class WebhooksSetup
                         $id = $oldWebhookEndpoint->id;
                         $url = $oldWebhookEndpoint->url;
                         $oldWebhookEndpoint->delete();
-                        $this->info("Deleted old webhook endpoint $webhookUrl ($id)");
+                        $this->webhooksLogger->addInfo("Deleted webhook $id ($webhookUrl)");
                     }
                     catch (\Exception $e)
                     {
@@ -318,7 +273,6 @@ class WebhooksSetup
             }
             catch (\Exception $e)
             {
-                $configuration['webhooks'] = [];
                 $this->error("Failed to retrieve configured webhooks for store " . $configuration['label'] . ": " . $e->getMessage());
             }
         }
@@ -329,33 +283,8 @@ class WebhooksSetup
     public function error($msg)
     {
         $count = count($this->errorMessages) + 1;
-
-        if ($this->output)
-            $this->output->writeln("<error>{$msg}</error>");
-
+        $this->webhooksLogger->addInfo("Error $count: $msg");
         $this->errorMessages[] = $msg;
-
-        $this->log("Error $count: $msg");
-    }
-
-    public function info($msg)
-    {
-        if ($this->output)
-            $this->output->writeln("<info>{$msg}</info>");
-
-        $this->successMessages[] = $msg;
-
-        $this->log($msg);
-    }
-
-    public function log($msg)
-    {
-        // Magento 2.0.0 - 2.4.3
-        if (method_exists($this->webhooksLogger, 'addInfo'))
-            $this->webhooksLogger->addInfo($msg);
-        // Magento 2.4.4+
-        else
-            $this->webhooksLogger->info($msg);
     }
 
     protected function getStoreConfiguration($storeId, $store, $mode)
@@ -431,7 +360,9 @@ class WebhooksSetup
         $data = \Stripe\WebhookEndpoint::all(['limit' => 100]);
         foreach ($data->autoPagingIterator() as $webhook)
         {
-            if (stripos($webhook->url, "/stripe/webhooks") === false)
+            if (stripos($webhook->url, "/stripe/webhooks") === false
+                && stripos($webhook->url, "/cryozonic-stripe/webhooks") === false
+                && stripos($webhook->url, "/cryozonic_stripe/webhooks") === false)
                 continue;
 
             $webhooks[] = $webhook;
@@ -458,16 +389,6 @@ class WebhooksSetup
 
     public function isConfigureNeeded()
     {
-        $error = null;
-
-        if (!$this->config->canInitialize($error))
-        {
-            $this->error($error);
-            throw new SilentException($error);
-        }
-        else
-            $this->config->setAppInfo();
-
         $stores = $this->storeManager->getStores();
         $configurations = $this->getAllWebhookConfigurations();
 

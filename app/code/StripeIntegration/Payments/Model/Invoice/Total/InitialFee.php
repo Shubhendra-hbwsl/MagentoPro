@@ -16,6 +16,9 @@ class InitialFee extends \Magento\Sales\Model\Order\Total\AbstractTotal
     }
 
     /**
+     * @param Quote $quote
+     * @param ShippingAssignmentInterface $shippingAssignment
+     * @param Total $total
      * @return $this
      */
     public function collect(
@@ -25,7 +28,7 @@ class InitialFee extends \Magento\Sales\Model\Order\Total\AbstractTotal
         $baseAmount = $this->helper->getTotalInitialFeeForInvoice($invoice, false);
 
         if (is_numeric($invoice->getBaseToOrderRate()))
-            $amount = round(floatval($baseAmount * $invoice->getBaseToOrderRate()), 4);
+            $amount = round($baseAmount * $invoice->getBaseToOrderRate(), 4);
         else
             $amount = $baseAmount;
 

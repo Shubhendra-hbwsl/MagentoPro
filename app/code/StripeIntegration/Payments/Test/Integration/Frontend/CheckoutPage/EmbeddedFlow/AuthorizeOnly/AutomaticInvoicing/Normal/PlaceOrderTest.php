@@ -2,11 +2,6 @@
 
 namespace StripeIntegration\Payments\Test\Integration\Frontend\CheckoutPage\EmbeddedFlow\AuthorizeOnly\AutomaticInvoicing\Normal;
 
-/**
- * Magento 2.3.7-p3 does not enable these at class level
- * @magentoAppIsolation enabled
- * @magentoDbIsolation enabled
- */
 class PlaceOrderTest extends \PHPUnit\Framework\TestCase
 {
     public function setUp(): void
@@ -53,8 +48,13 @@ class PlaceOrderTest extends \PHPUnit\Framework\TestCase
         $this->assertTrue($invoice->canCapture());
         $this->assertEquals(\Magento\Sales\Model\Order\Invoice::STATE_OPEN, $invoice->getState());
 
+        // Trigger webhooks
         $paymentIntentId = $order->getPayment()->getLastTransId();
         $paymentIntentId = $this->tests->helper()->cleanToken($paymentIntentId);
+        $this->tests->event()->triggerPaymentIntentEvents($paymentIntentId, $this);
+
+        // Refresh the order object
+        $order = $this->tests->refreshOrder($order);
 
         // Order checks
         $this->assertEquals(0, $order->getTotalPaid());

@@ -92,7 +92,7 @@ class InitialFee
         if (!is_numeric($product->getStripeSubInitialFee()))
             return 0;
 
-        return round(floatval($product->getStripeSubInitialFee() * $rate), 2) * $qty;
+        return round($product->getStripeSubInitialFee() * $rate, 2) * $qty;
     }
 
     public function getAdditionalOptionsForChildrenOf($item)
@@ -158,7 +158,7 @@ class InitialFee
 
         $trialDays = $product->getStripeSubTrial();
         if ($trialDays && is_numeric($trialDays) && $trialDays > 0)
-            $profile['trial_days'] = round(floatval($trialDays));
+            $profile['trial_days'] = round($trialDays);
         else
             $profile['trial_days'] = false;
 

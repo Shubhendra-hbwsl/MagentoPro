@@ -2,11 +2,6 @@
 
 namespace StripeIntegration\Payments\Test\Integration\Frontend\PRAPI\Subscription;
 
-/**
- * Magento 2.3.7-p3 does not enable these at class level
- * @magentoAppIsolation enabled
- * @magentoDbIsolation enabled
- */
 class PlaceOrderTest extends \PHPUnit\Framework\TestCase
 {
     public function setUp(): void
@@ -59,7 +54,7 @@ class PlaceOrderTest extends \PHPUnit\Framework\TestCase
           'card' => [
             'number' => '4242424242424242',
             'exp_month' => 7,
-            'exp_year' => 2025,
+            'exp_year' => 2022,
             'cvc' => '314',
           ],
           'billing_details' => $this->tests->address()->getStripeFormat("NewYork")

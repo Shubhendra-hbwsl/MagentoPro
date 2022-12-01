@@ -13,6 +13,7 @@ class CancelInvoice implements ObserverInterface
         \StripeIntegration\Payments\Model\Config $config,
         \Magento\Sales\Api\OrderManagementInterface $orderManagement,
         \Magento\Sales\Model\Service\InvoiceService $invoiceService,
+        \Magento\Framework\DB\Transaction $dbTransaction,
         \Magento\Framework\Event\ManagerInterface $eventManager,
         \StripeIntegration\Payments\Helper\Serializer $serializer
     )
@@ -23,6 +24,7 @@ class CancelInvoice implements ObserverInterface
         $this->_stripeCustomer = $helper->getCustomerModel();
         $this->_eventManager = $eventManager;
         $this->invoiceService = $invoiceService;
+        $this->dbTransaction = $dbTransaction;
         $this->serializer = $serializer;
     }
 

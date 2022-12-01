@@ -11,8 +11,6 @@ class Quote
     protected $quoteRepository = null;
     protected $productRepository = null;
     protected $availablePaymentMethods = [];
-    protected $customerEmail = null;
-    protected $customer = null;
 
     public function __construct()
     {
@@ -75,11 +73,10 @@ class Quote
                 break;
 
             case 'LoggedIn':
-                $this->customer = $customer = $this->customerRepository->get('customer@example.com');
+                $customer = $this->customerRepository->get('customer@example.com');
                 $this->customerSession->setCustomerId($customer->getId());
 
                 $this->quote->assignCustomer($customer);
-
                 break;
 
             default:
@@ -88,41 +85,6 @@ class Quote
         }
 
         return $this;
-    }
-
-    public function login()
-    {
-        $this->setCustomer("LoggedIn");
-        $checkout = $this->checkoutHelper->getCheckout();
-        $addresses = $this->customer->getAddresses();
-        $this->customerSession->loginById($this->customer->getId());
-
-        $addressIds = [];
-        foreach ($addresses as $address)
-        {
-            $addressIds[] = $address->getId();
-        }
-
-        $shippingInfo = [];
-        foreach ($this->quote->getAllVisibleItems() as $quoteItem)
-        {
-            $shippingInfo[] = [
-                $quoteItem->getId() => [
-                    'qty' => $quoteItem->getQtyToAdd(),
-                    'address' => $addressIds[0]
-                ]
-            ];
-        }
-        $checkout->setShippingItemsInformation($shippingInfo);
-
-        $methods = [];
-        $addresses = $this->quote->getAllShippingAddresses();
-        foreach ($addresses as $address)
-        {
-            $methods[$address->getId()] = 'flatrate_flatrate';
-        }
-        $checkout->setShippingMethods($methods);
-        return $this->save();
     }
 
     public function addProduct($sku, $qty, $params = null)
@@ -350,13 +312,12 @@ class Quote
         {
             $this->quote->getBillingAddress()->addData($address);
             $this->quote->setCustomerEmail($address["email"]);
-            $this->customerEmail = $address["email"];
         }
 
         return $this->save();
     }
 
-    public function getPaymentMethodData($identifier)
+    public function setPaymentMethod($identifier)
     {
         $data = null;
 
@@ -388,16 +349,6 @@ class Quote
                     'additional_data' => [
                         "client_side_confirmation" => true,
                         "payment_method" => "pm_card_chargeDeclinedInsufficientFunds"
-                    ]
-                ];
-                break;
-
-            case 'AuthenticationRequiredCard':
-                $data = [
-                    'method' => 'stripe_payments',
-                    'additional_data' => [
-                        "client_side_confirmation" => true,
-                        "payment_method" => "pm_card_authenticationRequired"
                     ]
                 ];
                 break;
@@ -441,13 +392,6 @@ class Quote
 
         }
 
-        return $data;
-    }
-
-    public function setPaymentMethod($identifier)
-    {
-        $data = $this->getPaymentMethodData($identifier);
-
         if ($data)
             $this->quote->getPayment()->importData($data);
 
@@ -480,10 +424,6 @@ class Quote
     public function placeOrder()
     {
         $this->quote->collectTotals()->save();
-
-        if (!$this->quote->getCustomerEmail() && $this->customerEmail) // Magento 2.3
-            $this->quote->setCustomerEmail($this->customerEmail);
-
         return $this->cartManagement->submit($this->quote);
         // $orderId = $this->quoteManagement->placeOrder($this->quote->getId());
         // return $this->orderFactory->create()->load($orderId);

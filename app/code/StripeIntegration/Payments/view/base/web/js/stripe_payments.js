@@ -1,7 +1,7 @@
 // Copyright © Stripe, Inc
 //
 // @package    StripeIntegration_Payments
-// @version    3.2.8
+// @version    3.0.0
 
 var initStripe = function(params, callback)
 {
@@ -12,7 +12,7 @@ var initStripe = function(params, callback)
     {
         stripe.urlBuilder = urlBuilder;
         stripe.storage = storage;
-        stripe.initStripeJs(params, callback);
+        stripe.initStripeJs(params.apiKey, params.locale, callback);
     });
 };
 
@@ -20,7 +20,7 @@ var initStripe = function(params, callback)
 var stripe =
 {
     // Properties
-    version: "3.2.8",
+    version: "3.0.0",
     quote: null, // Comes from the checkout js
     customer: null, // Comes from the checkout js
     card: null,
@@ -39,10 +39,9 @@ var stripe =
     adminSourceOwner: null,
     PRAPIEvent: null,
     paymentRequest: null,
-    cardElement: null,
 
     // Methods
-    initStripeJs: function(params, callback)
+    initStripeJs: function(apiKey, locale, callback)
     {
         var message = null;
 
@@ -50,7 +49,7 @@ var stripe =
         {
             try
             {
-                stripe.stripeJs = Stripe(params.apiKey);
+                stripe.stripeJs = Stripe(apiKey);
             }
             catch (e)
             {
@@ -59,24 +58,12 @@ var stripe =
                 else
                     message = 'Could not initialize Stripe.js';
             }
-
-            if (stripe.stripeJs && typeof params.appInfo != "undefined")
-            {
-                try
-                {
-                    stripe.stripeJs.registerAppInfo(params.appInfo);
-                }
-                catch (e)
-                {
-                    console.warn(e);
-                }
-            }
         }
 
         if (callback)
             callback(message);
         else if (message)
-            console.error(message);
+            stripe.displayCardError(message);
     },
 
     onWindowLoaded: function(callback)
@@ -152,6 +139,32 @@ var stripe =
             element.classList.add(className);
         else
             element.className += (' ' + className);
+    },
+
+    clearCardErrors: function()
+    {
+        var box = document.getElementById('stripe-payments-card-errors');
+
+        if (box)
+        {
+            box.innerText = '';
+            box.classList.remove('populated');
+        }
+    },
+
+    displayCardError: function(message)
+    {
+        message = stripe.maskError(message);
+        console.log("something went wrong with your card");
+        var box = document.getElementById('stripe-payments-card-errors');
+
+        if (box)
+        {
+            box.innerText = message;
+            box.classList.add('populated');
+        }
+        else
+            alert(message);
     },
 
     maskError: function(err)

@@ -23,6 +23,7 @@ class WebhooksObserver implements ObserverInterface
         \StripeIntegration\Payments\Helper\CheckoutSession $checkoutSessionHelper,
         \Magento\Sales\Model\Order\Email\Sender\OrderCommentSender $orderCommentSender,
         \Magento\Sales\Model\Service\InvoiceService $invoiceService,
+        \Magento\Framework\DB\Transaction $dbTransaction,
         \Magento\Framework\Event\ManagerInterface $eventManager,
         \Magento\Framework\App\CacheInterface $cache,
         \Magento\Sales\Model\Order\Payment\Transaction\Builder $transactionBuilder,
@@ -45,6 +46,7 @@ class WebhooksObserver implements ObserverInterface
         $this->orderCommentSender = $orderCommentSender;
         $this->eventManager = $eventManager;
         $this->invoiceService = $invoiceService;
+        $this->dbTransaction = $dbTransaction;
         $this->cache = $cache;
         $this->transactionBuilder = $transactionBuilder;
         $this->orderRepository = $orderRepository;
@@ -61,14 +63,10 @@ class WebhooksObserver implements ObserverInterface
     public function wasCapturedFromAdmin($object)
     {
         if (!empty($object['id']) && $this->cache->load("admin_captured_" . $object['id']))
-        {
             return true;
-        }
 
         if (!empty($object['payment_intent']) && is_string($object['payment_intent']) && $this->cache->load("admin_captured_" . $object['payment_intent']))
-        {
             return true;
-        }
 
         return false;
     }
@@ -82,6 +80,7 @@ class WebhooksObserver implements ObserverInterface
     }
 
     /**
+     * @param Observer $observer
      * @return void
      */
     public function execute(\Magento\Framework\Event\Observer $observer)
@@ -109,9 +108,6 @@ class WebhooksObserver implements ObserverInterface
             // Creates an invoice for an order when the payment is captured from the Stripe dashboard
             case 'stripe_payments_webhook_charge_captured':
 
-                if ($this->wasCapturedFromAdmin($object))
-                    return;
-
                 $order = $this->webhooksHelper->loadOrderFromEvent($arrEvent);
                 $payment = $order->getPayment();
 
@@ -132,6 +128,9 @@ class WebhooksObserver implements ObserverInterface
                 $order->addStatusToHistory(false, $comment, $isCustomerNotified = false);
                 $this->orderRepository->save($order);
 
+                if ($this->wasCapturedFromAdmin($object))
+                    return;
+
                 $params = [
                     "amount" => $object['amount_captured'],
                     "currency" => $object['currency']
@@ -148,36 +147,33 @@ class WebhooksObserver implements ObserverInterface
                 if (empty($object['payment_intent']))
                     return;
 
-                $orders = $this->webhooksHelper->loadOrderFromEvent($arrEvent, true);
+                $order = $this->webhooksHelper->loadOrderFromEvent($arrEvent);
 
-                foreach ($orders as $order)
+                $this->eventManager->dispatch(
+                    'stripe_payments_review_closed_before',
+                    ['order' => $order, 'object' => $object]
+                );
+
+                if ($object['reason'] == "approved")
                 {
-                    $this->eventManager->dispatch(
-                        'stripe_payments_review_closed_before',
-                        ['order' => $order, 'object' => $object]
-                    );
+                    if (!$order->canHold())
+                        $order->unhold();
 
-                    if ($object['reason'] == "approved")
-                    {
-                        if (!$order->canHold())
-                            $order->unhold();
-
-                        $comment = __("The payment has been approved via Stripe.");
-                        $order->addStatusToHistory(false, $comment, $isCustomerNotified = false);
-                        $this->paymentsHelper->saveOrder($order);
-                    }
-                    else
-                    {
-                        $comment = __("The payment was canceled through Stripe with reason: %1.", ucfirst(str_replace("_", " ", $object['reason'])));
-                        $order->addStatusToHistory(false, $comment, $isCustomerNotified = false);
-                        $this->paymentsHelper->saveOrder($order);
-                    }
-
-                    $this->eventManager->dispatch(
-                        'stripe_payments_review_closed_after',
-                        ['order' => $order, 'object' => $object]
-                    );
+                    $comment = __("The payment has been approved through Stripe.");
+                    $order->addStatusToHistory(false, $comment, $isCustomerNotified = false);
+                    $this->paymentsHelper->saveOrder($order);
                 }
+                else
+                {
+                    $comment = __("The payment was canceled through Stripe with reason: %1.", ucfirst(str_replace("_", " ", $object['reason'])));
+                    $order->addStatusToHistory(false, $comment, $isCustomerNotified = false);
+                    $this->paymentsHelper->saveOrder($order);
+                }
+
+                $this->eventManager->dispatch(
+                    'stripe_payments_review_closed_after',
+                    ['order' => $order, 'object' => $object]
+                );
 
                 break;
 
@@ -362,23 +358,11 @@ class WebhooksObserver implements ObserverInterface
                     $this->paymentsHelper->setTotalPaid($order, 0, $order->getBaseCurrencyCode());
 
                 // Trial subscriptions should still be fulfilled. A new order will be created when the trial ends.
+                $order->setCanSendNewEmailFlag(true);
                 $state = \Magento\Sales\Model\Order::STATE_PROCESSING;
                 $status = $order->getConfig()->getStateDefaultStatus($state);
                 $comment = __("Your trial period for order #%1 has started.", $order->getIncrementId());
                 $order->setState($state)->addStatusToHistory($status, $comment, $isCustomerNotified = true);
-
-                if ($this->paymentsHelper->hasOnlyTrialSubscriptionsIn($order->getAllItems()))
-                {
-                    if (!$order->getEmailSent())
-                    {
-                        $this->paymentsHelper->sendNewOrderEmailFor($order, true);
-                    }
-
-                    // There will be no charge.succeeded event for trial subscription orders, so create the invoice here.
-                    // When a Pending invoice exists, the order switches to Closed status right after creating a shipment.
-                    $this->paymentsHelper->invoicePendingOrder($order, "cannot_capture_subscriptions");
-                }
-
                 $this->paymentsHelper->saveOrder($order);
 
                 break;
@@ -422,19 +406,25 @@ class WebhooksObserver implements ObserverInterface
                     return;
                 }
 
-                if ($this->wasCapturedFromAdmin($object))
-                    break;
-
                 $order = $this->webhooksHelper->loadOrderFromEvent($arrEvent);
-                $hasSubscriptions = $this->paymentsHelper->hasSubscriptionsIn($order->getAllItems());
 
-                if (!empty($object['invoice']))
+                if (!in_array($order->getState(), ['new', 'pending_payment', 'processing', 'payment_review']))
                 {
-                    $stripeInvoice = $this->config->getStripeClient()->invoices->retrieve($object['invoice'], []);
-                    if ($stripeInvoice->billing_reason == "subscription_cycle" // A subscription has renewed
-                        || $stripeInvoice->billing_reason == "subscription_update" // A trial subscription was manually ended
-                        || $stripeInvoice->billing_reason == "subscription_threshold" // A billing threshold was reached
-                    )
+                    $isUnpaid = ($order->getTotalPaid() < $order->getGrandTotal());
+                    $hasTrialSubscriptions = $this->paymentsHelper->hasTrialSubscriptionsIn($order->getAllItems());
+                    $isVirtualOrder = $order->getIsVirtual();
+
+                    if ($isUnpaid && $hasTrialSubscriptions)
+                    {
+                        // Exception to the rule: Trial subscription orders with a 0 amount initial payment will be in Complete status
+                        // In this case we want to register a new charge against a completed order.
+                    }
+                    else if ($isVirtualOrder && $this->orderAgeLessThan($minutes = 60 * 12, $order))
+                    {
+                        // Exception 2 to the rule: Virtual subscription orders will be in Complete status.
+                        // In this case we want to register a new charge against a completed order.
+                    }
+                    else
                     {
                         // We may receive a charge.succeeded event from a recurring subscription payment. In that case we want to create
                         // a new order for the new payment, rather than registering the charge against the original order.
@@ -442,9 +432,18 @@ class WebhooksObserver implements ObserverInterface
                     }
                 }
 
-                if (!$order->getEmailSent())
+                switch ($order->getPayment()->getMethod())
                 {
-                    $this->paymentsHelper->sendNewOrderEmailFor($order);
+                    case 'stripe_payments':
+                    case 'stripe_payments_checkout':
+                        $this->paymentsHelper->sendNewOrderEmailFor($order);
+                        break;
+
+                    case 'stripe_payments_express':
+                        break;
+
+                    default:
+                        return;
                 }
 
                 $this->deduplicatePaymentMethod($object, $order);
@@ -462,38 +461,69 @@ class WebhooksObserver implements ObserverInterface
                     ->setIsFraudDetected(false)
                     ->save();
 
+                $chargeAmount = $this->paymentsHelper->convertStripeAmountToOrderAmount($object['amount'], $object['currency'], $order);
+                $isFullyPaid = false;
                 $amountCaptured = ($object["captured"] ? $object['amount_captured'] : 0);
+                $currency = $object["currency"];
+                $transactionsTotal = $this->paymentsHelper->convertStripeAmountToOrderAmount($amountCaptured, $currency, $order);
+
+                $transactions = $this->paymentsHelper->getOrderTransactions($order);
+                foreach ($transactions as $t)
+                {
+                    if ($t->getTxnType() != 'authorization')
+                        $transactionsTotal += $t->getAdditionalInformation("amount");
+                }
+
+                if ($transactionsTotal >= $order->getGrandTotal())
+                    $isFullyPaid = true;
 
                 $this->orderHelper->onTransaction($order, $object, $transactionId);
 
-                if ($amountCaptured > 0)
+                // If the order was partially invoiced in the past, it was because there were both regular products and trial subscriptions in the cart.
+                // When trialing subscriptions activate, we create a new order with a separate invoice, and for that reason we do not want to invoice the
+                // original order, otherwise the Magento invoice totals reports will be higher than the actual charged amount. We instead maintain a
+                // single invoice per order for a single collected payment at the time it was placed.
+                $shouldInvoice = ($order->canInvoice() && $order->getInvoiceCollection()->count() == 0);
+
+                if ($shouldInvoice)
                 {
-                    // We intentionally do not pass $params in order to avoid multi-currency rounding errors.
-                    // For example, if $order->getGrandTotal() == $16.2125, Stripe will charge $16.2100. If we
-                    // invoice for $16.2100, then there will be an order total due for 0.0075 which will cause problems.
-                    // $params = [
-                    //     "amount" => $amountCaptured,
-                    //     "currency" => $object['currency']
-                    // ];
-                    $this->paymentsHelper->invoiceOrder($order, $transactionId, \Magento\Sales\Model\Order\Invoice::CAPTURE_OFFLINE, $params = null, true);
-                }
-                else if ($amountCaptured == 0) // Authorize Only mode
-                {
-                    if ($hasSubscriptions)
+                    if ($this->config->isAuthorizeOnly())
                     {
-                        // If it has trial subscriptions, we want a Paid invoice which will partially refund
-                        $this->paymentsHelper->invoiceOrder($order, $transactionId, \Magento\Sales\Model\Order\Invoice::CAPTURE_OFFLINE, null, true);
+                        if ($this->config->isAutomaticInvoicingEnabled())
+                            $this->paymentsHelper->invoicePendingOrder($order, $transactionId);
+                    }
+                    else if (!$isFullyPaid)
+                    {
+                        $this->paymentsHelper->invoicePendingOrder($order, $transactionId);
                     }
                     else
                     {
-                        if ($this->config->isAutomaticInvoicingEnabled())
-                        {
-                            $this->paymentsHelper->invoicePendingOrder($order, $transactionId);
-                        }
+                        $invoice = $this->paymentsHelper->invoiceOrder($order, $transactionId, \Magento\Sales\Model\Order\Invoice::CAPTURE_OFFLINE);
                     }
                 }
 
-                $this->subscriptionsHelper->refundTrialSubscriptionItemsForOrder($order);
+                try
+                {
+                    $this->paymentsHelper->setTotalPaid($order, $transactionsTotal, $object['currency']);
+                }
+                catch (\Exception $e)
+                {
+                    $this->paymentsHelper->logError("ERROR: Could not set the total paid amount for order #" . $order->getIncrementId());
+                }
+
+                if ($isFullyPaid)
+                {
+                    $invoiceCollection = $order->getInvoiceCollection();
+                    if ($invoiceCollection->count() > 0)
+                    {
+                        $invoice = $invoiceCollection->getFirstItem();
+                        if ($invoice->getState() == \Magento\Sales\Model\Order\Invoice::STATE_OPEN)
+                        {
+                            $invoice->pay();
+                            $this->paymentsHelper->saveInvoice($invoice);
+                        }
+                    }
+                }
 
                 if ($this->config->isStripeRadarEnabled() && !empty($object['outcome']['type']) && $object['outcome']['type'] == "manual_review")
                     $this->paymentsHelper->holdOrder($order);
@@ -565,7 +595,26 @@ class WebhooksObserver implements ObserverInterface
                     ]
                 ];
                 $invoice = $this->config->getStripeClient()->invoices->retrieve($invoiceId, $invoiceParams);
+                $isTrialingSubscription = (!empty($invoice->subscription->status) && $invoice->subscription->status == "trialing");
                 $isNewSubscriptionOrder = (!empty($object["billing_reason"]) && $object["billing_reason"] == "subscription_create");
+
+                if ($isTrialingSubscription)
+                {
+                    // No payment was collected for this invoice (i.e. trial subscription only)
+                    $order->setCanSendNewEmailFlag(true);
+                    $this->paymentsHelper->notifyCustomer($order, __("Your trial period for order #%1 has started.", $order->getIncrementId()));
+
+                    // If a charge.succeeded event was not received, set the total paid amount to 0
+                    $transactions = $this->paymentsHelper->getOrderTransactions($order);
+                    if (count($transactions) === 0)
+                        $this->paymentsHelper->setTotalPaid($order, 0, $object['currency']);
+
+                    // Trial subscriptions should still be fulfilled. A new order will be created when the trial ends.
+                    $state = \Magento\Sales\Model\Order::STATE_PROCESSING;
+                    $status = $order->getConfig()->getStateDefaultStatus($state);
+                    $order->setState($state)->setStatus($status);
+                    $this->paymentsHelper->saveOrder($order);
+                }
 
                 switch ($paymentMethod)
                 {
@@ -588,63 +637,84 @@ class WebhooksObserver implements ObserverInterface
 
                         if (!$isNewSubscriptionOrder)
                         {
-                            try
-                            {
-                                // This is a recurring payment, so create a brand new order based on the original one
-                                $this->recurringOrderHelper->createFromInvoiceId($invoiceId);
-                            }
-                            catch (\Exception $e)
-                            {
-                                $this->webhooksHelper->sendRecurringOrderFailedEmail($arrEvent, $e);
-                                throw $e;
-                            }
+                            // This is a recurring payment, so create a brand new order based on the original one
+                            $this->recurringOrderHelper->createFromInvoiceId($invoiceId);
                         }
 
                         break;
 
                     case 'stripe_payments_checkout':
 
+                        if ($isNewSubscriptionOrder && !empty($invoice->payment_intent))
+                        {
+                            // A subscription order was placed via Stripe Checkout. Description and metadata can be set only
+                            // after the payment intent is confirmed and the subscription is created.
+                            $quote = $this->paymentsHelper->loadQuoteById($order->getQuoteId());
+                            $params = $this->paymentIntentFactory->create()->getParamsFrom($quote, $order, $invoice->payment_intent->payment_method);
+                            $updateParams = $this->checkoutSessionHelper->getPaymentIntentUpdateParams($params, $invoice->payment_intent, $filter = ["description", "metadata"]);
+                            $this->config->getStripeClient()->paymentIntents->update($invoice->payment_intent->id, $updateParams);
+                            $invoice = $this->config->getStripeClient()->invoices->retrieve($invoiceId, $invoiceParams);
+                        }
+
+                        // If this is a subscription order which was just placed, create an invoice for the order and return
+                        // @todo: Do we get here if the payment is fraudulent, and does a duplicate order get created?
                         if ($isNewSubscriptionOrder)
                         {
-                            if (!$order->getEmailSent())
+                            $checkoutSessionId = $order->getPayment()->getAdditionalInformation('checkout_session_id');
+                            if (empty($checkoutSessionId))
+                                throw new WebhookException("Order #%1 is not associated with a valid Stripe Checkout Session.", $order->getIncrementId());
+
+                            if ($isTrialingSubscription)
+                                break;
+
+                            $invoiceParams = [
+                                "amount" => $invoice->payment_intent->amount,
+                                "currency" => $invoice->payment_intent->currency,
+                                "shipping" => 0,
+                                "tax" => $invoice->tax,
+                            ];
+
+                            foreach ($invoice->lines->data as $invoiceLineItem)
                             {
-                                $this->paymentsHelper->sendNewOrderEmailFor($order, true);
+                                if (!empty($invoiceLineItem->price->product->metadata->{"Type"}) && $invoiceLineItem->price->product->metadata->{"Type"} == "Shipping")
+                                {
+                                    $invoiceParams["shipping"] += $invoiceLineItem->price->unit_amount * $invoiceLineItem->quantity;
+                                }
                             }
 
-                            if ($invoice->total == 0) // Is trial subscription
+                            $paymentIntentModel = $this->paymentIntentFactory->create();
+                            $paymentIntentModel->processAuthenticatedOrder($order, $invoice->payment_intent);
+
+                            if (!empty($invoice->payment_intent->amount) && $invoice->payment_intent->amount > 0)
                             {
-                                $this->paymentsHelper->invoicePendingOrder($order, "cannot_capture_subscriptions", \Magento\Sales\Model\Order\Invoice::CAPTURE_OFFLINE, $params = null, true);
-                                $this->paymentsHelper->setProcessingState($order, __("Trial subscription started."));
+                                $this->paymentsHelper->invoiceOrder($order, $transactionId = $invoice->payment_intent->id, $captureCase = \Magento\Sales\Model\Order\Invoice::CAPTURE_OFFLINE, $amount = null, $save = true);
+
+                                if ($invoice->payment_intent->status == "succeeded")
+                                    $action = __("Captured");
+                                else if ($invoice->payment_intent->status == "requires_capture")
+                                    $action = __("Authorized");
+                                else
+                                    $action = __("Processed");
+
+                                $amount = $this->paymentsHelper->getFormattedStripeAmount($invoice->payment_intent->amount, $invoice->payment_intent->currency, $order);
+                                $comment = __("%action amount %amount through Stripe.", ['action' => $action, 'amount' => $amount]);
+                                $order->addStatusToHistory($status = \Magento\Sales\Model\Order::STATE_PROCESSING, $comment, $isCustomerNotified = false)->save();
                             }
-
-                            if (!empty($invoice->payment_intent))
-                            {
-                                $paymentIntentModel = $this->paymentIntentFactory->create();
-                                $paymentIntentModel->processAuthenticatedOrder($order, $invoice->payment_intent);
-
-                                // With Stripe Checkout, the Payment Intent description and metadata can be set only
-                                // after the payment intent is confirmed and the subscription is created.
-                                $quote = $this->paymentsHelper->loadQuoteById($order->getQuoteId());
-                                $params = $this->paymentIntentFactory->create()->getParamsFrom($quote, $order, $invoice->payment_intent->payment_method);
-                                $updateParams = $this->checkoutSessionHelper->getPaymentIntentUpdateParams($params, $invoice->payment_intent, $filter = ["description", "metadata"]);
-                                $this->config->getStripeClient()->paymentIntents->update($invoice->payment_intent->id, $updateParams);
-                                $invoice = $this->config->getStripeClient()->invoices->retrieve($invoiceId, $invoiceParams);
-                            }
-
-                            $this->paymentsHelper->saveOrder($order);
                         }
-                        else // Is recurring subscription order
+                        else
                         {
-                            try
+                            // At the activation of a trial subscription, mark the original order as paid
+                            if ($order->getTotalPaid() < $order->getGrandTotal())
                             {
-                                // This is a recurring payment, so create a brand new order based on the original one
-                                $this->recurringOrderHelper->createFromSubscriptionItems($invoiceId);
+                                $transactionId = $this->paymentsHelper->cleanToken($order->getPayment()->getLastTransId());
+                                if (empty($transactionId))
+                                    $transactionId = $invoice->payment_intent;
+
+                                $this->paymentsHelper->invoiceOrder($order, $transactionId, $captureCase = \Magento\Sales\Model\Order\Invoice::CAPTURE_OFFLINE, $amount = null, $save = true);
                             }
-                            catch (\Exception $e)
-                            {
-                                $this->webhooksHelper->sendRecurringOrderFailedEmail($arrEvent, $e);
-                                throw $e;
-                            }
+
+                            // Otherwise, this is a recurring payment, so create a brand new order based on the original one
+                            $this->recurringOrderHelper->createFromSubscriptionItems($invoiceId);
                         }
 
                         break;
@@ -744,38 +814,29 @@ class WebhooksObserver implements ObserverInterface
 
     public function deduplicatePaymentMethod($object, $order)
     {
-        try
+        if (!empty($object['customer']) && !empty($object['payment_method']))
         {
-            if (!empty($object['customer']) && !empty($object['payment_method']))
+            $type = $object['payment_method_details']['type'];
+            if (!empty($object['payment_method_details'][$type]['fingerprint']))
             {
-                $type = $object['payment_method_details']['type'];
-                if (!empty($object['payment_method_details'][$type]['fingerprint']))
-                {
-                    $this->paymentsHelper->deduplicatePaymentMethod(
-                        $object['customer'],
-                        $object['payment_method'],
-                        $type,
-                        $object['payment_method_details'][$type]['fingerprint'],
-                        $this->config->getStripeClient()
-                    );
-                }
+                $this->paymentsHelper->deduplicatePaymentMethod(
+                    $object['customer'],
+                    $object['payment_method'],
+                    $type,
+                    $object['payment_method_details'][$type]['fingerprint'],
+                    $this->config->getStripeClient()
+                );
+            }
 
-                $paymentMethod = $this->config->getStripeClient()->paymentMethods->retrieve($object['payment_method'], []);
-                if ($paymentMethod->customer) // true if the PM is saved on the customer
-                {
-                    // Update the billing address on the payment method if that is already attached to a customer
-                    $this->config->getStripeClient()->paymentMethods->update(
-                        $object['payment_method'],
-                        ['billing_details' => $this->addressHelper->getStripeAddressFromMagentoAddress($order->getBillingAddress())]
-                    );
-                }
+            $paymentMethod = $this->config->getStripeClient()->paymentMethods->retrieve($object['payment_method'], []);
+            if ($paymentMethod->customer) // true if the PM is saved on the customer
+            {
+                // Update the billing address on the payment method if that is already attached to a customer
+                $this->config->getStripeClient()->paymentMethods->update(
+                    $object['payment_method'],
+                    ['billing_details' => $this->addressHelper->getStripeAddressFromMagentoAddress($order->getBillingAddress())]
+                );
             }
         }
-        catch (\Exception $e)
-        {
-            return false;
-        }
-
-        return true;
     }
 }

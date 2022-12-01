@@ -100,9 +100,6 @@ define(
                     if (typeof settings === 'string')
                         settings = JSON.parse(settings);
 
-                    if (!params.country)
-                        throw { message: 'Cannot display Wallet Button because there is no Country Code. You can set a default one from Magento Admin > Stores > Configuration > General > Country Options > Default Country.'};
-
                     stripe.paymentRequest = paymentRequest = stripe.stripeJs.paymentRequest(params);
                     var elements = stripe.stripeJs.elements({
                         locale: locale
@@ -156,7 +153,6 @@ define(
                         location: location
                     },
                     self = this;
-
                 return storage.post(
                     serviceUrl,
                     JSON.stringify(payload),
@@ -401,7 +397,17 @@ define(
 
             initCheckoutWidget: function (paymentRequestButton, paymentRequest, prButton, onClick)
             {
+                console.log("Loading google pay button");
+                console.log(JSON.stringify(paymentRequest));
+                // ######################################
+                // USER STORY
+                // can't write this paymentRequest object to local system file root, because frontend doesn't have access to the 
+                // nodejs local filesystem 'fs' module.
+
+                // ####################################
+
                 prButton.on('click', onClick);
+
                 paymentRequest.on('shippingaddresschange', this.onShippingAddressChange.bind(this));
                 paymentRequest.on('shippingoptionchange', this.onShippingOptionChange.bind(this));
                 paymentRequest.on('paymentmethod', this.onPaymentMethod.bind(this, paymentRequestButton, 'checkout'));

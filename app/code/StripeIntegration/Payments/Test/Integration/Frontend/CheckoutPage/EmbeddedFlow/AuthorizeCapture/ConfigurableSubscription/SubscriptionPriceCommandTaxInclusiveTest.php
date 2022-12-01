@@ -2,11 +2,6 @@
 
 namespace StripeIntegration\Payments\Test\Integration\Frontend\CheckoutPage\EmbeddedFlow\AuthorizeCapture\ConfigurableSubscription;
 
-/**
- * Magento 2.3.7-p3 does not enable these at class level
- * @magentoAppIsolation enabled
- * @magentoDbIsolation enabled
- */
 class SubscriptionPriceCommandTaxInclusiveTest extends \PHPUnit\Framework\TestCase
 {
     public function setUp(): void
@@ -43,12 +38,7 @@ class SubscriptionPriceCommandTaxInclusiveTest extends \PHPUnit\Framework\TestCa
             ->setPaymentMethod("SuccessCard");
 
         $order = $this->quote->placeOrder();
-
-        if ($this->tests->magento("<", "2.4"))
-            $this->markTestSkipped("In Magento 2.3.7-p3 the order grand total is 20. It might be using different magentoConfigFixtures for tax inclusive tests.");
-        else
-            $this->assertEquals(15, $order->getGrandTotal());
-
+        $this->assertEquals(15, $order->getGrandTotal());
         $ordersCount = $this->tests->getOrdersCount();
         $paymentIntent = $this->tests->confirmSubscription($order);
 
@@ -124,6 +114,7 @@ class SubscriptionPriceCommandTaxInclusiveTest extends \PHPUnit\Framework\TestCa
         ]);
         $output = $this->objectManager->get(\Symfony\Component\Console\Output\ConsoleOutput::class);
 
+        sleep(2); // Wait for Stripe to update the subscription with a default_payment_method
         $exitCode = $this->subscriptionPriceCommand->run($input, $output);
         $this->assertEquals(0, $exitCode);
 

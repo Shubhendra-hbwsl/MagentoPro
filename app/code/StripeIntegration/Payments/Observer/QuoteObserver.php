@@ -22,9 +22,10 @@ class QuoteObserver extends AbstractDataAssignObserver
     }
 
     /**
+     * @param Observer $observer
      * @return void
      */
-    public function execute(\Magento\Framework\Event\Observer $observer)
+    public function execute(Observer $observer)
     {
         $quote = $observer->getEvent()->getQuote();
         $eventName = $observer->getEvent()->getName();

@@ -9,7 +9,7 @@ use Magento\Framework\Exception\LocalizedException;
 class Config
 {
     public static $moduleName           = "Magento2";
-    public static $moduleVersion        = "3.2.8";
+    public static $moduleVersion        = "3.0.0";
     public static $minStripePHPVersion  = "7.100.0";
     public static $moduleUrl            = "https://stripe.com/docs/plugins/magento";
     public static $partnerId            = "pp_partner_Fs67gT2M6v3mH7";
@@ -31,9 +31,7 @@ class Config
         \Magento\Tax\Model\Config $taxConfig,
         \StripeIntegration\Payments\Model\ResourceModel\Webhook\Collection $webhookCollection,
         \Magento\Store\Api\StoreRepositoryInterface $storeRepository,
-        \Magento\Framework\App\ProductMetadataInterface $productMetadata,
-        \Magento\Framework\App\Cache\TypeListInterface $cacheTypeList,
-        \Magento\Framework\App\State $appState
+        \Magento\Framework\App\ProductMetadataInterface $productMetadata
     ) {
         $this->scopeConfig = $scopeConfig;
         $this->helper = $helper;
@@ -48,8 +46,6 @@ class Config
         $this->webhookCollection = $webhookCollection;
         $this->storeRepository = $storeRepository;
         $this->productMetadata = $productMetadata;
-        $this->cacheTypeList = $cacheTypeList;
-        $this->appState = $appState;
 
         $this->isInitialized = $this->initStripe();
     }
@@ -61,12 +57,11 @@ class Config
         return implode(".", $version);
     }
 
-    public function canInitialize(&$error = null)
+    public function canInitialize()
     {
         if (!class_exists('Stripe\Stripe'))
         {
-            $error = "The Stripe PHP library dependency has not been installed. Please follow the installation instructions at https://stripe.com/docs/plugins/magento/install#manual";
-            $this->logger->critical($error);
+            $this->logger->critical("The Stripe PHP library dependency has not been installed. Please follow the installation instructions at https://stripe.com/docs/plugins/magento/install#manual");
             return false;
         }
 
@@ -74,8 +69,7 @@ class Config
         {
             $version = \StripeIntegration\Payments\Model\Config::$moduleVersion;
             $libVersion = $this->getComposerRequireVersion();
-            $error = "Stripe Payments v$version now depends on Stripe PHP library v$libVersion or newer. Please upgrade your installed Stripe PHP library with the command: composer require stripe/stripe-php:^$libVersion";
-            $this->logger->critical($error);
+            $this->logger->critical("Stripe Payments v$version now depends on Stripe PHP library v$libVersion or newer. Please upgrade your installed Stripe PHP library with the command: composer require stripe/stripe-php:^$libVersion");
             return false;
         }
 
@@ -107,10 +101,24 @@ class Config
         if (empty($key))
             return false;
 
+        $magentoVersion = "unknown";
+        $magentoEdition = "unknown";
+
         try
         {
-            $this->setAppInfo();
+            $magentoVersion = $this->productMetadata->getVersion();
+            $magentoEdition = $this->productMetadata->getEdition();
+        }
+        catch (\Exception $e)
+        {
+
+        }
+
+        try
+        {
+            $version = "{$this::$moduleVersion}_{$magentoVersion}_{$magentoEdition}";
             \Stripe\Stripe::setApiKey($key);
+            \Stripe\Stripe::setAppInfo($this::$moduleName, $version, $this::$moduleUrl, $this::$partnerId);
 
             $api = \StripeIntegration\Payments\Model\Config::STRIPE_API;
 
@@ -127,38 +135,6 @@ class Config
         }
 
         return true;
-    }
-
-    public function setAppInfo()
-    {
-        if ($this->canInitialize())
-        {
-            $appInfo = $this->getAppInfo();
-            \Stripe\Stripe::setAppInfo($appInfo['name'], $appInfo['version'], $appInfo['url'], $appInfo['partner_id']);
-        }
-    }
-
-    public function getAppInfo($clientSide = false)
-    {
-        $magentoVersion = "unknown";
-        $magentoEdition = "unknown";
-
-        try
-        {
-            $magentoVersion = $this->productMetadata->getVersion();
-            $magentoEdition = $this->productMetadata->getEdition();
-        }
-        catch (\Exception $e)
-        {
-
-        }
-
-        return [
-            "name" => $this::$moduleName,
-            "version" => ($clientSide ? $this::$moduleVersion : "{$this::$moduleVersion}_{$magentoVersion}_{$magentoEdition}"),
-            "url" => $this::$moduleUrl,
-            "partner_id" => $this::$partnerId
-        ];
     }
 
     protected function initStripeFromPublicKey($key)
@@ -208,7 +184,7 @@ class Config
         return $this->isInitialized = $this->initStripeFromPublicKey($customer->getPk());
     }
 
-    public function reInitStripeFromStoreCode($storeCode, $mode = null)
+    public function reInitStripeFromStoreCode($storeCode)
     {
         $store = $this->storeRepository->getActiveStoreByCode($storeCode);
         if (!$store->getId())
@@ -217,25 +193,7 @@ class Config
         $storeId = $store->getStoreId();
         $this->isInitialized = false;
         $this->storeManager->setCurrentStore($storeId);
-
-        if (!$mode)
-            $mode = $this->getStripeMode($storeId);
-
-        return $this->isInitialized = $this->initStripe($mode, $storeId);
-    }
-
-    public function reInitStripeFromStoreId($storeId, $mode = null)
-    {
-        $store = $this->storeRepository->getActiveStoreById($storeId);
-        if (!$store->getId())
-            throw new \Exception("Could not find a store with id '$storeId'");
-
-        $this->isInitialized = false;
-        $this->storeManager->setCurrentStore($storeId);
-
-        if (!$mode)
-            $mode = $this->getStripeMode($storeId);
-
+        $mode = $this->getStripeMode($storeId);
         return $this->isInitialized = $this->initStripe($mode, $storeId);
     }
 
@@ -256,11 +214,6 @@ class Config
         $data = $this->scopeConfig->getValue("payment/stripe_payments$section/$field", ScopeInterface::SCOPE_STORE, $storeId);
 
         return $data;
-    }
-
-    public function getValue($configPath, $scope, $scopeId = null)
-    {
-        return $this->scopeConfig->getValue($configPath, $scope, $scopeId);
     }
 
     public function setConfigData($field, $value, $method = null, $scope = null, $storeId = null)
@@ -339,14 +292,8 @@ class Config
 
     public function decrypt($key)
     {
-        if (empty($key))
-            return null;
-
-        if (!preg_match('/^[A-Za-z0-9_]+$/', $key))
+         if (!preg_match('/^[A-Za-z0-9_]+$/', $key))
             $key = $this->encryptor->decrypt($key);
-
-        if (empty($key))
-            return null;
 
         return trim($key);
     }
@@ -356,12 +303,7 @@ class Config
         if (empty($mode))
             $mode = $this->getStripeMode();
 
-        $pk = $this->getConfigData("stripe_{$mode}_pk", "basic", $storeId);
-
-        if (empty($pk))
-            return null;
-
-        return trim($pk);
+        return trim($this->getConfigData("stripe_{$mode}_pk", "basic", $storeId));
     }
 
     public function getStripeParams()
@@ -446,7 +388,7 @@ class Config
 
     public function getCardIcons()
     {
-        return (string)$this->getConfigData("card_icons_specific");
+        return $this->getConfigData("card_icons_specific");
     }
 
     public function setIsStripeAPIKeyError($isError)
@@ -460,6 +402,11 @@ class Config
             $this->helper->hasSubscriptions() ||
             ($this->isAuthorizeOnly() && $this->retryWithSavedCard()) ||
             $this->helper->isMultiShipping());
+    }
+
+    public function isMOTOExemptionsEnabled()
+    {
+        return (bool)$this->getConfigData('moto_exemptions');
     }
 
     public function getIsStripeAPIKeyError()
@@ -489,7 +436,7 @@ class Config
             if ($this->helper->isZeroDecimal($currency))
                 $cents = 1;
 
-            $fields["amount"] = round(floatval($amount) * $cents);
+            $fields["amount"] = round($amount * $cents);
         }
         else
         {
@@ -556,7 +503,7 @@ class Config
             $cents = 1;
 
         $params = array(
-          "amount" => round(floatval($amount * $cents)),
+          "amount" => round($amount * $cents),
           "currency" => $currency,
           "description" => $this->helper->getOrderDescription($order),
           "metadata" => $this->getMetadata($order)
@@ -624,14 +571,14 @@ class Config
 
     public function getSetupFutureUsage($quote)
     {
-        if ($this->helper->isAdmin())
-            return null;
+        if ($this->helper->isAdmin() && $this->isMOTOExemptionsEnabled())
+            return null; // MOTO cannot be passed together with setup_future_usage
 
         if ($this->helper->hasSubscriptions($quote))
             return "off_session";
 
         if ($this->isAuthorizeOnly() && $this->retryWithSavedCard())
-            return "on_session";
+            return ($this->isMOTOExemptionsEnabled() ? "on_session" : "off_session");
 
         if ($this->helper->isMultiShipping($quote))
             return "on_session";
@@ -640,25 +587,5 @@ class Config
             return "on_session";
 
         return null;
-    }
-
-    public function enableOriginCheck()
-    {
-        $this->resourceConfig->saveConfig("payment/stripe_payments/webhook_origin_check", "1", "default", 0);
-    }
-
-    public function disableOriginCheck()
-    {
-        $this->resourceConfig->saveConfig("payment/stripe_payments/webhook_origin_check", "0", "default", 0);
-    }
-
-    public function clearCache($type)
-    {
-        $this->cacheTypeList->cleanType($type);
-    }
-
-    public function getMagentoMode()
-    {
-        return $this->appState->getMode();
     }
 }

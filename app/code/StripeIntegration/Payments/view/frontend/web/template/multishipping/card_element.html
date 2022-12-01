@@ -12,7 +12,7 @@
 
   <div class="payment-method-content stripe-payments-card-form" data-bind="blockLoader: isLoading">
 
-    <div class="stripe-dropdown stripe-element-font stripe-element-border" data-bind="visible: selection">
+    <div class="stripe-dropdown" data-bind="visible: selection">
         <div class="stripe-dropdown-selection" data-bind="click: toggleDropdown, with: selection">
           <img data-bind="if: icon, attr: { src: icon }" />
           <span data-bind="text: label"></span>
@@ -38,8 +38,9 @@
     </div>
 
     <div class="stripe-card-element no-wrap" data-bind="visible: isPaymentFormVisible">
-      <div id="stripe-card-element" data-bind="afterRender: onContainerRendered"></div>
+      <div id="stripe-card-element" data-bind="afterRender: onCardElementContainerRendered"></div>
     </div>
+    <div id="stripe-payments-card-errors"></div>
 
     <!-- ko foreach: getRegion('messages') -->
     <!-- ko template: getTemplate() --><!-- /ko -->

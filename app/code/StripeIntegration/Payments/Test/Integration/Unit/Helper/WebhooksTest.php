@@ -4,11 +4,6 @@ namespace StripeIntegration\Payments\Test\Integration\Unit\Helper;
 
 use PHPUnit\Framework\Constraint\StringContains;
 
-/**
- * Magento 2.3.7-p3 does not enable these at class level
- * @magentoAppIsolation enabled
- * @magentoDbIsolation enabled
- */
 class WebhooksTest extends \PHPUnit\Framework\TestCase
 {
     public function setUp(): void

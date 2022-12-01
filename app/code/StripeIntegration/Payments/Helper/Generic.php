@@ -27,10 +27,10 @@ class Generic
     public $quoteHasSubscriptions = [];
 
     public function __construct(
-        \Magento\Framework\App\Config\ScopeConfigInterface $scopeConfig,
+        ScopeConfigInterface $scopeConfig,
         \Magento\Backend\Model\Session\Quote $backendSessionQuote,
         \Magento\Framework\App\Request\Http $request,
-        \Psr\Log\LoggerInterface $logger,
+        LoggerInterface $logger,
         \Magento\Framework\App\State $appState,
         \Magento\Store\Model\StoreManagerInterface $storeManager,
         \Magento\Sales\Model\Order $order,
@@ -51,6 +51,7 @@ class Generic
         \Magento\Sales\Model\Order\Invoice\CommentFactory $invoiceCommentFactory,
         \Magento\Customer\Model\Address $customerAddress,
         \Magento\Framework\Webapi\Response $apiResponse,
+        \Magento\Framework\DB\TransactionFactory $transactionFactory,
         \Magento\Framework\App\RequestInterface $requestInterface,
         \Magento\Framework\UrlInterface $urlBuilder,
         \Magento\Framework\Pricing\Helper\Data $pricingHelper,
@@ -90,10 +91,8 @@ class Generic
         \Magento\Sales\Api\InvoiceRepositoryInterface $invoiceRepository,
         \Magento\Sales\Api\TransactionRepositoryInterface $transactionRepository,
         \Magento\Sales\Api\CreditmemoRepositoryInterface $creditmemoRepository,
-        \Magento\Sales\Api\OrderPaymentRepositoryInterface $orderPaymentRepository,
         \Magento\Framework\Session\SessionManagerInterface $sessionManager,
-        \StripeIntegration\Payments\Model\Multishipping\QuoteFactory $multishippingQuoteFactory,
-        \Magento\Sales\Api\CreditmemoManagementInterface $creditmemoManagement
+        \StripeIntegration\Payments\Model\Multishipping\QuoteFactory $multishippingQuoteFactory
     ) {
         $this->scopeConfig = $scopeConfig;
         $this->backendSessionQuote = $backendSessionQuote;
@@ -119,6 +118,7 @@ class Generic
         $this->invoiceCommentFactory = $invoiceCommentFactory;
         $this->customerAddress = $customerAddress;
         $this->apiResponse = $apiResponse;
+        $this->transactionFactory = $transactionFactory;
         $this->requestInterface = $requestInterface;
         $this->urlBuilder = $urlBuilder;
         $this->pricingHelper = $pricingHelper;
@@ -158,10 +158,8 @@ class Generic
         $this->invoiceRepository = $invoiceRepository;
         $this->transactionRepository = $transactionRepository;
         $this->creditmemoRepository = $creditmemoRepository;
-        $this->orderPaymentRepository = $orderPaymentRepository;
         $this->sessionManager = $sessionManager;
         $this->multishippingQuoteFactory = $multishippingQuoteFactory;
-        $this->creditmemoManagement = $creditmemoManagement;
     }
 
     public function getProductImage($product, $type = 'product_thumbnail_image')
@@ -287,12 +285,12 @@ class Generic
         return $this->quotes[$quoteId];
     }
 
-    public function loadOrderByIncrementId($incrementId, $useCache = true)
+    public function loadOrderByIncrementId($incrementId)
     {
         if (!isset($this->orders))
             $this->orders = [];
 
-        if (!empty($this->orders[$incrementId]) && $useCache)
+        if (!empty($this->orders[$incrementId]))
             return $this->orders[$incrementId];
 
         try
@@ -419,9 +417,6 @@ class Generic
             $customer = $this->getGuestCustomer();
 
         if (!$customer)
-            return null;
-
-        if (!$customer->getEmail())
             return null;
 
         return trim(strtolower($customer->getEmail()));
@@ -664,8 +659,7 @@ class Generic
         }
         else if ($item->getParentItem() && $item->getParentItem()->getProductType() == "bundle")
         {
-            // return $this->getSubscriptionQuoteItemFromBundle($item, $qty, $order);
-            return $item;
+            return $this->getSubscriptionQuoteItemFromBundle($item, $qty, $order);
         }
         else
             return $item;
@@ -673,7 +667,7 @@ class Generic
 
     /**
      * Description
-     * @param object $item
+     * @param object $orderItem
      * @return \Magento\Catalog\Model\Product|null
      */
     public function getSubscriptionProductFromOrderItem($item)
@@ -1029,7 +1023,10 @@ class Generic
         if (is_string($msg))
             $msg = __($msg);
 
-        $this->messageManager->addWarningMessage($msg);
+        if ($this->isAdmin())
+            $this->messageManager->addWarning($msg);
+        else if ($this->isMultiShipping())
+            $this->messageManager->addWarningMessage($msg);
     }
 
     public function addError($msg)
@@ -1037,7 +1034,10 @@ class Generic
         if (is_string($msg))
             $msg = __($msg);
 
-        $this->messageManager->addErrorMessage( $msg );
+        if ($this->isMultiShipping())
+            $this->messageManager->addErrorMessage( $msg );
+        else
+            $this->messageManager->addError( $msg );
     }
 
     public function addSuccess($msg)
@@ -1045,7 +1045,10 @@ class Generic
         if (is_string($msg))
             $msg = __($msg);
 
-        $this->messageManager->addSuccessMessage( $msg );
+        if ($this->isMultiShipping())
+            $this->messageManager->addSuccessMessage( $msg );
+        else
+            $this->messageManager->addSuccess( $msg );
     }
 
     public function logError($msg, $trace = null)
@@ -1135,22 +1138,29 @@ class Generic
         }
 
         if ($this->isAdmin())
-        {
             throw new CouldNotSaveException(__($msg));
-        }
         else if ($this->isAPIRequest())
-        {
             throw new CouldNotSaveException(__($this->cleanError($msg)), $e);
-        }
         else if ($this->isMultiShipping())
-        {
             throw new \Magento\Framework\Exception\LocalizedException(__($msg), $e);
-        }
         else
         {
+            // We return in direct controller requests which already have their own error handlers
+            // and during integration testing.
             $error = $this->cleanError($msg);
-            throw new \Exception($error);
+            $this->addError($error);
+            return $error;
         }
+    }
+
+    public function maskException($e)
+    {
+        if (strpos($e->getMessage(), "Received unknown parameter: payment_method_options[card][moto]") === 0)
+            $message = "You have enabled MOTO exemptions from the Stripe module configuration section, but your Stripe account has not been gated to use MOTO exemptions. Please contact magento@stripe.com to request MOTO enabled for your Stripe account.";
+        else
+            $message = $e->getMessage();
+
+        return $this->dieWithError($message, $e);
     }
 
     public function isValidToken($token)
@@ -1184,12 +1194,12 @@ class Generic
         if ($this->isZeroDecimal($currency))
             $cents = 1;
         $amount = ($details['amount'] / $cents);
-        $baseAmount = round(floatval($amount / $invoice->getBaseToOrderRate()), 2);
+        $baseAmount = round($amount / $invoice->getBaseToOrderRate(), 2);
 
         if (!empty($details["shipping"]))
         {
             $shipping = ($details['shipping'] / $cents);
-            $baseShipping = round(floatval($shipping / $invoice->getBaseToOrderRate()), 2);
+            $baseShipping = round($shipping / $invoice->getBaseToOrderRate(), 2);
         }
         else
         {
@@ -1200,7 +1210,7 @@ class Generic
         if (!empty($details["tax"]))
         {
             $tax = ($details['tax'] / $cents);
-            $baseTax = round(floatval($tax / $invoice->getBaseToOrderRate()), 2);
+            $baseTax = round($tax / $invoice->getBaseToOrderRate(), 2);
         }
         else
         {
@@ -1281,7 +1291,15 @@ class Generic
         {
             $this->saveInvoice($invoice);
             $this->saveOrder($order);
-            $this->sendInvoiceEmail($invoice);
+        }
+
+        try
+        {
+            $this->invoiceSender->send($invoice);
+        }
+        catch (\Exception $e)
+        {
+            $this->logError($e->getMessage(), $e->getTraceAsString());
         }
 
         return $invoice;
@@ -1309,7 +1327,6 @@ class Generic
             {
                 $this->saveInvoice($invoice);
                 $this->saveOrder($order);
-                $this->sendInvoiceEmail($invoice);
             }
 
             return $invoice;
@@ -1338,7 +1355,6 @@ class Generic
                     {
                         $this->saveInvoice($invoice);
                         $this->saveOrder($order);
-                        $this->sendInvoiceEmail($invoice);
                     }
 
                     return $invoice;
@@ -1347,20 +1363,6 @@ class Generic
         }
 
         return null;
-    }
-
-    public function createPendingInvoiceForOrder($order)
-    {
-        if (!$order->canInvoice())
-            throw new \Exception("Order #" . $order->getIncrementId() . " cannot be invoiced.");
-
-        $invoice = $this->invoiceService->prepareInvoice($order);
-        $invoice->register();
-
-        $this->saveInvoice($invoice);
-        $this->saveOrder($order);
-
-        return $invoice;
     }
 
     // Pending orders are the ones that were placed with an asynchronous payment method, such as SOFORT or SEPA Direct Debit,
@@ -1389,8 +1391,6 @@ class Generic
 
         $invoice->register();
 
-        $this->sendInvoiceEmail($invoice);
-
         $this->saveInvoice($invoice);
         $this->saveOrder($order);
 
@@ -1404,9 +1404,6 @@ class Generic
         // When in Authorize & Capture, uncaptured invoices exist, so we should cancel them first
         foreach($order->getInvoiceCollection() as $invoice)
         {
-            if ($invoice->getState() == \Magento\Sales\Model\Order\Invoice::STATE_CANCELED)
-                continue;
-
             if ($invoice->canCancel())
             {
                 $invoice->cancel();
@@ -1461,9 +1458,6 @@ class Generic
     // Removes decorative strings that Magento adds to the transaction ID
     public function cleanToken($token)
     {
-        if (empty($token))
-            return null;
-
         return preg_replace('/-.*$/', '', $token);
     }
 
@@ -1634,7 +1628,6 @@ class Generic
             try
             {
                 $this->orderSender->send($order);
-                return true;
             }
             catch (\Exception $e)
             {
@@ -1642,23 +1635,6 @@ class Generic
                 $this->logError($e->getTraceAsString());
             }
         }
-
-        return false;
-    }
-
-    public function sendInvoiceEmail($invoice)
-    {
-        try
-        {
-            $this->invoiceSender->send($invoice);
-            return true;
-        }
-        catch (\Exception $e)
-        {
-            $this->logError($e->getMessage(), $e->getTraceAsString());
-        }
-
-        return false;
     }
 
     // An assumption is made that Webhooks->initStripeFrom($order) has already been called
@@ -1686,14 +1662,14 @@ class Generic
             if (empty($rate))
                 return $baseAmount; // The base currency and the order currency are the same
 
-            return round(floatval($baseAmount * $rate), $precision);
+            return round($baseAmount * $rate, $precision);
         }
         else
         {
             $store = $this->storeManager->getStore();
             $amount = $store->getBaseCurrency()->convert($baseAmount, $stripeCurrency);
 
-            return round(floatval($amount), $precision);
+            return round($amount, $precision);
         }
 
         // $rate = $this->currencyFactory->create()->load($order->getBaseCurrencyCode())->getAnyRate($currency);
@@ -1724,7 +1700,7 @@ class Generic
         if (empty($rate))
             return $amount; // The base currency and the order currency are the same
 
-        return round(floatval($amount / $rate), 2);
+        return round($amount / $rate, 2);
     }
 
     public function convertStripeAmountToBaseOrderAmount($amount, $currency, $order)
@@ -1738,7 +1714,7 @@ class Generic
             $cents = 1;
 
         $amount = ($amount / $cents);
-        $baseAmount = round(floatval($amount / $order->getBaseToOrderRate()), 2);
+        $baseAmount = round($amount / $order->getBaseToOrderRate(), 2);
 
         return $baseAmount;
     }
@@ -1754,7 +1730,7 @@ class Generic
             $cents = 1;
 
         $amount = ($amount / $cents);
-        $baseAmount = round(floatval($amount / $quote->getBaseToQuoteRate()), 2);
+        $baseAmount = round($amount / $quote->getBaseToQuoteRate(), 2);
 
         return $baseAmount;
     }
@@ -1796,7 +1772,7 @@ class Generic
         if ($this->isZeroDecimal($currency))
             $cents = 1;
 
-        $amount = (floatval($amount) / $cents);
+        $amount = ($amount / $cents);
 
         return round($amount, 2);
     }
@@ -1978,7 +1954,7 @@ class Generic
         if (!$order->getIsVirtual())
         {
             $data["shipping_address_zip"] = $order->getShippingAddress()->getPostcode();
-            $data["shipping_amount"] = round(floatval($order->getShippingInclTax()) * $cents);
+            $data["shipping_amount"] = round($order->getShippingInclTax() * $cents);
         }
 
         $data = array_merge($data, $this->getLevel3AdditionalDataFrom($order, $cents));
@@ -1994,8 +1970,8 @@ class Generic
         foreach ($quoteItems as $item)
         {
             $amount = $item->getPrice();
-            $tax = round(floatval($item->getTaxAmount()) * $cents);
-            $discount = round(floatval($item->getDiscountAmount()) * $cents);
+            $tax = round($item->getTaxAmount() * $cents);
+            $discount = round($item->getDiscountAmount() * $cents);
 
             $items[] = [
                 "product_code" => substr($item->getSku(), 0, 12),
@@ -2031,7 +2007,7 @@ class Generic
         if (is_numeric($customerId) && $customerId > 0)
         {
             $model = $this->customerCollection->getByCustomerId($customerId, $pk);
-            if ($model && $model->getId() && $model->existsInStripe())
+            if ($model && $model->getId())
             {
                 $model->updateSessionId();
                 $this->currentCustomer = $model;
@@ -2052,7 +2028,7 @@ class Generic
                 $model = $this->customerCollection->getBySessionId($sessionId, $pk);
             }
 
-            if ($model && $model->getId() && $model->existsInStripe())
+            if ($model && $model->getId())
                 $this->currentCustomer = $model;
         }
 
@@ -2072,10 +2048,6 @@ class Generic
         $storeId = $this->getStoreId();
         $mode = $this->scopeConfig->getValue("payment/stripe_payments_basic/stripe_mode", \Magento\Store\Model\ScopeInterface::SCOPE_STORE, $storeId);
         $pk = $this->scopeConfig->getValue("payment/stripe_payments_basic/stripe_{$mode}_pk", \Magento\Store\Model\ScopeInterface::SCOPE_STORE, $storeId);
-
-        if (empty($pk))
-            return null;
-
         return trim($pk);
     }
 
@@ -2142,9 +2114,9 @@ class Generic
 
         if ($token == "cannot_capture_subscriptions")
         {
-            $msg = __("Subscription items cannot be captured online. Capturing offline instead.");
+            $msg = __("Subscription items cannot be captured online. Will capture offline instead.");
             $this->addWarning($msg);
-            $this->overrideInvoiceActionComment($payment, $msg);
+            $this->addOrderComment($msg, $order);
             return;
         }
 
@@ -2188,14 +2160,12 @@ class Generic
             if ($this->isZeroDecimal($currency))
                 $cents = 1;
 
-            $stripeAmount = round(floatval($finalAmount * $cents));
+            $stripeAmount = round($finalAmount * $cents);
 
             if ($this->isAuthorizationExpired($ch))
             {
                 if ($useSavedCard)
-                {
-                    return $this->apiFactory->create()->reCreateCharge($payment, $amount, $ch);
-                }
+                    $this->apiFactory->create()->reCreateCharge($payment, $amount, $ch);
                 else
                     return $this->dieWithError("The payment authorization with the customer's bank has expired. If you wish to create a new payment using a saved card, please enable Expired Authorizations from Configuration &rarr; Sales &rarr; Payment Methods &rarr; Stripe &rarr; Card Payments &rarr; Expired Authorizations.");
             }
@@ -2252,7 +2222,7 @@ class Generic
                     $msg = __("%1 could not be captured online because it was already captured via Stripe. Capturing %1 offline instead.", $humanReadableAmount);
 
                 $this->addWarning($msg);
-                $this->overrideInvoiceActionComment($payment, $msg);
+                $this->addOrderComment($msg, $order);
             }
             else // status == pending
             {
@@ -2272,17 +2242,8 @@ class Generic
                     $stripeAmount = $availableAmount;
                 }
 
-                $key = "admin_captured_" . $paymentObject->id;
-                try
-                {
-                    $this->cache->save($value = "1", $key, ["stripe_payments"], $lifetime = 60 * 60);
-                    $paymentObject->capture(array($amountToCapture => $stripeAmount));
-                }
-                catch (\Exception $e)
-                {
-                    $this->cache->remove($key);
-                    throw $e;
-                }
+                $this->cache->save($value = "1", $key = "admin_captured_" . $paymentObject->id, ["stripe_payments"], $lifetime = 60 * 60);
+                $paymentObject->capture(array($amountToCapture => $stripeAmount));
             }
         }
         catch (\Exception $e)
@@ -2450,6 +2411,58 @@ class Generic
         return $this->stripeCouponFactory->create()->load($ruleId, 'rule_id');
     }
 
+    public function refundPaymentIntent($payment, $amount, $currency)
+    {
+        $paymentIntentId = $payment->getLastTransId();
+        $paymentIntentId = $this->cleanToken($paymentIntentId);
+
+        // Redirect-based payment method where an invoice is in Pending status, with no transaction ID
+        if (empty($paymentIntentId))
+            return; // Creates an Offline Credit Memo
+
+        if (strpos($paymentIntentId, 'pi_') !== 0)
+            throw new LocalizedException(__("Could not refund invoice because %1 is not a valid Payment Intent ID", $paymentIntentId));
+
+        $params = ["amount" => $this->convertMagentoAmountToStripeAmount($amount, $currency)];
+
+        $pi = \Stripe\PaymentIntent::retrieve($paymentIntentId);
+
+        if ($pi->status == \StripeIntegration\Payments\Model\PaymentIntent::AUTHORIZED)
+        {
+            $pi->cancel();
+            return;
+        }
+        else
+        {
+            $charge = $pi->charges->data[0];
+            $params["charge"] = $charge->id;
+        }
+
+        if (!$charge->refunded) // This is true when an authorization has expired or when there was a refund through the Stripe account
+        {
+            $this->cache->save($value = "1", $key = "admin_refunded_" . $charge->id, ["stripe_payments"], $lifetime = 60 * 60);
+            \Stripe\Refund::create($params);
+        }
+        else
+        {
+            $comment = __('An attempt to manually refund the order was made, however this order was already refunded in Stripe. Creating an offline refund instead.');
+            $payment->getOrder()->addStatusToHistory($status = false, $comment, $isCustomerNotified = false);
+        }
+    }
+
+    public function setQuoteTaxFrom($stripeTaxAmount, $stripeCurrency, $quote)
+    {
+        // Stripe uses a different tax rounding algorithm than Magento, so check for tax rounding errors and fix them
+        $tax = $this->convertStripeAmountToQuoteAmount($stripeTaxAmount, $stripeCurrency, $quote);
+        $baseTax = $this->convertStripeAmountToBaseQuoteAmount($stripeTaxAmount, $stripeCurrency, $quote);
+        $taxDiff = $tax - $quote->getTaxAmount();
+        $baseTaxDiff = $baseTax - $quote->getBaseTaxAmount();
+        $quote->setTaxAmount($tax);
+        $quote->setBaseTaxAmount($baseTax);
+        $quote->setGrandTotal($quote->getGrandTotal() + $taxDiff);
+        $quote->setBaseGrandTotal($quote->getBaseGrandTotal() + $baseTaxDiff);
+    }
+
     public function sendPaymentFailedEmail($quote, $msg)
     {
         try
@@ -2483,9 +2496,6 @@ class Generic
 
     public function resetPaymentData($payment)
     {
-        if ($payment->getPaymentId())
-            return;
-
         // Reset a previously initialized 3D Secure session
         $payment->setAdditionalInformation('stripejs_token', null)
             ->setAdditionalInformation('token', null)
@@ -2511,6 +2521,10 @@ class Generic
         else if ($this->isAdmin())
         {
             $payment->setAdditionalInformation("payment_location", "Admin area");
+        }
+        else if ($this->isAPIRequest())
+        {
+            $payment->setAdditionalInformation("payment_location", "API");
         }
         else if (!empty($data['is_recurring_subscription']))
         {
@@ -2550,9 +2564,6 @@ class Generic
             $card = explode(':', $data['cc_stripejs_token']);
             $data['cc_stripejs_token'] = $card[0];
             $payment->setAdditionalInformation('token', $card[0]);
-
-            if (isset($data['save_payment_method']) && $data['save_payment_method'])
-                $payment->setAdditionalInformation('save_payment_method', true);
 
             if ($this->isMultiShipping())
             {
@@ -2657,7 +2668,7 @@ class Generic
         if ($currency == strtolower($order->getOrderCurrencyCode()))
         {
             // Convert amount to 4 decimal points
-            if ($amount == round(floatval($order->getGrandTotal()), 2))
+            if ($amount == round($order->getGrandTotal(), 2))
                 $amount = $order->getGrandTotal();
 
             $order->setTotalPaid(min($order->getGrandTotal(), $amount));
@@ -2743,11 +2754,6 @@ class Generic
         return $this->creditmemoRepository->save($creditmemo);
     }
 
-    public function savePayment($payment)
-    {
-        return $this->orderPaymentRepository->save($payment);
-    }
-
     public function setProcessingState($order, $comment = null, $isCustomerNotified = false)
     {
         $state = \Magento\Sales\Model\Order::STATE_PROCESSING;
@@ -2786,20 +2792,9 @@ class Generic
         return $timeDifference;
     }
 
-    public function isTransactionId($transactionId)
-    {
-        $isPaymentIntent = (strpos($transactionId, "pi_") === 0);
-        $isCharge = (strpos($transactionId, "ch_") === 0);
-        return ($isPaymentIntent || $isCharge);
-    }
-
     public function getOrdersByTransactionId($transactionId)
     {
         $orders = [];
-
-        if (!$this->isTransactionId($transactionId))
-            return $orders;
-
         $transactions = $this->transactionSearchResultFactory->create()->addFieldToFilter('txn_id', $transactionId);
 
         foreach ($transactions as $transaction)
@@ -2822,18 +2817,5 @@ class Generic
     public function getCache()
     {
         return $this->cache;
-    }
-
-    public function round($amount, $precision = 0)
-    {
-        if (!is_numeric($amount))
-            return 0;
-
-        return round($amount, $precision);
-    }
-
-    public function sendCreditMemoEmail($creditmemoId)
-    {
-        $this->creditmemoManagement->notify($creditmemoId);
     }
 }

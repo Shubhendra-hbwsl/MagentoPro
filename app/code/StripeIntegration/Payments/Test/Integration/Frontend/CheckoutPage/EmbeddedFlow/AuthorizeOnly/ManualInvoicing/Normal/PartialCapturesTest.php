@@ -2,11 +2,6 @@
 
 namespace StripeIntegration\Payments\Test\Integration\Frontend\CheckoutPage\EmbeddedFlow\AuthorizeOnly\ManualInvoicing\Normal;
 
-/**
- * Magento 2.3.7-p3 does not enable these at class level
- * @magentoAppIsolation enabled
- * @magentoDbIsolation enabled
- */
 class PartialCapturesTest extends \PHPUnit\Framework\TestCase
 {
     public function setUp(): void
@@ -61,7 +56,6 @@ class PartialCapturesTest extends \PHPUnit\Framework\TestCase
             }
         }
 
-        // Partially invoice the order
         \Magento\TestFramework\Helper\Bootstrap::getInstance()->loadArea('adminhtml');
         $this->tests->invoiceOnline($order, ['simple-product' => 2]);
 

@@ -19,7 +19,7 @@ class WebhooksConfigurationObserver extends AbstractDataAssignObserver
         $this->webhooksSetup = $webhooksSetup;
     }
 
-    public function execute(\Magento\Framework\Event\Observer $observer)
+    public function execute(Observer $observer)
     {
         $event = $observer->getEvent();
         $this->webhooksSetup->onWebhookCreated($event);

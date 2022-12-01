@@ -197,33 +197,32 @@ class Address
 
     public function clean($str)
     {
-        if (empty($str))
-            return null;
-
         return strtolower(trim($str));
     }
 
     public function parseFullName($name, $nameType)
     {
-        if (empty($name) || empty(trim($name)))
-            throw new LocalizedException(__("No name specified in your %1 address.", $nameType));
+        try
+        {
+            $nameParts = explode(' ', $name);
+            if (empty($nameParts))
+                throw new LocalizedException("No %1 name specified.", $nameType);
 
-        $name = trim($name);
-        $name = preg_replace('!\s+!', ' ', $name); // Replace multiple spaces
+            $firstName = array_shift($nameParts);
+            $lastName = implode(" ", $nameParts);
 
-        $nameParts = explode(' ', $name);
-        $firstName = array_shift($nameParts);
+            // @codingStandardsIgnoreStart
+            $return = new \Magento\Framework\DataObject();
+            // @codingStandardsIgnoreEnd
+            return $return->setFirstname($firstName)
+                          ->setLastname($lastName);
+        }
+        catch (\Exception $e)
+        {
+            return false;
+        }
 
-        if (empty($firstName) || count($nameParts) == 0)
-            throw new LocalizedException(__("Please specify your full name in your %1 address.", $nameType));
-
-        $lastName = implode(" ", $nameParts);
-
-        // @codingStandardsIgnoreStart
-        $return = new \Magento\Framework\DataObject();
-        // @codingStandardsIgnoreEnd
-        return $return->setFirstname($firstName)
-                      ->setLastname($lastName);
+        return false;
     }
 
     public function filterAddressData($data)

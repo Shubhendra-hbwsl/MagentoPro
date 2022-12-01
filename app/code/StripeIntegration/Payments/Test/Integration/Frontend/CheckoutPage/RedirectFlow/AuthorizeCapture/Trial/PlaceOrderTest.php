@@ -2,11 +2,6 @@
 
 namespace StripeIntegration\Payments\Test\Integration\Frontend\RedirectFlow\AuthorizeCapture\Trial;
 
-/**
- * Magento 2.3.7-p3 does not enable these at class level
- * @magentoAppIsolation enabled
- * @magentoDbIsolation enabled
- */
 class PlaceOrderTest extends \PHPUnit\Framework\TestCase
 {
     public function setUp(): void
@@ -92,8 +87,8 @@ class PlaceOrderTest extends \PHPUnit\Framework\TestCase
 
         $this->tests->compare($order->getData(), [
             "grand_total" => 26.66,
-            "total_paid" => 0, // The original order should not be paid, it should be Closed after a shipment has been created
-            "total_due" => 26.66,
+            "total_paid" => 26.66,
+            "total_due" => 0,
             "state" => "processing",
             "status" => "processing"
         ]);

@@ -36,8 +36,6 @@ class Tests
         $this->invoiceService = $this->objectManager->get(\Magento\Sales\Model\Service\InvoiceService::class);
         $this->paymentElementFactory = $this->objectManager->get(\StripeIntegration\Payments\Model\PaymentElementFactory::class);
         $this->shipOrder = $this->objectManager->get(\Magento\Sales\Api\ShipOrderInterface::class);
-        $this->productMetadata = $this->objectManager->get(\Magento\Framework\App\ProductMetadataInterface::class);
-        $this->paymentControllerFactory = $this->objectManager->get(\StripeIntegration\Payments\Controller\Payment\IndexFactory::class);
     }
 
     public function refundOffline($invoice, $itemSkus)
@@ -134,11 +132,6 @@ class Tests
         return $this->stripeConfig->getStripeClient();
     }
 
-    public function config()
-    {
-        return $this->stripeConfig;
-    }
-
     public function event()
     {
         return $this->event;
@@ -162,21 +155,6 @@ class Tests
     public function getLastOrder()
     {
         return $this->objectManager->get('Magento\Sales\Model\Order')->getCollection()->setOrder('increment_id','DESC')->getFirstItem();
-    }
-
-    public function getOrderBySortPosition($sortPosition)
-    {
-        $orders = $this->objectManager->create('Magento\Sales\Model\Order')->getCollection()->setOrder('increment_id','DESC');
-
-        foreach ($orders as $order)
-        {
-            if ($sortPosition == 1)
-                return $order;
-
-            $sortPosition--;
-        }
-
-        return null;
     }
 
     public function getLastCheckoutSession()
@@ -262,9 +240,6 @@ class Tests
 
         $clientSecret = $paymentElement->getClientSecret($order->getQuoteId(), $paymentMethodId, $order);
         $paymentIntent = $this->stripe()->paymentIntents->confirm($paymentElement->getPaymentIntentId(), $params);
-        $controller = $this->paymentControllerFactory->create();
-        $controller->getRequest()->setParam('payment_intent', $paymentIntent->id);
-        $controller->execute();
         $this->event()->triggerPaymentIntentEvents($paymentIntent);
 
         return $paymentIntent;
@@ -281,7 +256,6 @@ class Tests
             $params["payment_method"] = $paymentMethodId;
 
         $clientSecret = $paymentElement->getClientSecret($order->getQuoteId(), $paymentMethodId, $order);
-        $this->test->assertNotEmpty($clientSecret, "The client secret could not be created");
 
         if (strpos($clientSecret, "seti_") === 0)
         {
@@ -336,17 +310,5 @@ class Tests
     public function shipOrder($orderId)
     {
         $this->shipOrder->execute($orderId);
-    }
-
-    public function reInitConfig()
-    {
-        $this->objectManager->get(\Magento\Framework\App\Config\ReinitableConfigInterface::class)->reinit();
-        $this->objectManager->create(\Magento\Store\Model\StoreManagerInterface::class)->reinitStores();
-    }
-
-    public function magento($operator, $version)
-    {
-        $magentoVersion = $this->productMetadata->getVersion();
-        return version_compare($magentoVersion, $version, $operator);
     }
 }

@@ -67,33 +67,23 @@ define(
                     if (err)
                         return self.crash(err);
 
-                    self.initSavedPaymentMethods.bind(self)();
                     self.initPaymentForm.bind(self)(params);
                 });
             },
 
-            onContainerRendered: function()
-            {
-                this.onCardElementContainerRendered();
-                this.isInitialized(true);
-            },
-
             initPaymentForm: function(params)
             {
-                this.isInitializing(false);
-                this.isLoading(false);
-
-                if (this.isCollapsed()) // Don't render PE with a height of 0
-                    return;
-
                 if (document.getElementById('stripe-card-element') === null)
                     return this.crash("Cannot initialize Card Element on a DOM that does not contain a div.stripe-card-element.");;
 
                 if (!stripe.stripeJs)
                     return this.crash("Stripe.js could not be initialized.");
 
+                this.initSavedPaymentMethods();
+
                 var elements = this.elements = stripe.stripeJs.elements({
-                    locale: params.locale
+                    locale: params.locale,
+                    appearance: this.getStripeCardElementStyle()
                 });
 
                 var options = {
@@ -104,6 +94,8 @@ define(
                 this.cardElement = elements.create('card', options);
                 this.cardElement.mount('#stripe-card-element');
                 this.cardElement.on('change', this.onChange.bind(this));
+
+                this.isLoading(false);
             },
 
             getStripeCardElementStyle: function()

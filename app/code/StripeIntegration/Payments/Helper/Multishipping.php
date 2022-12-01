@@ -579,9 +579,9 @@ class Multishipping
 
         foreach ($orders as $order)
         {
-            $total += round(floatval($order->getGrandTotal()), 2);
-            $total -= round(floatval($order->getTotalRefunded()), 2);
-            $total -= round(floatval($order->getTotalCanceled()), 2);
+            $total += round($order->getGrandTotal(), 2);
+            $total -= round($order->getTotalRefunded(), 2);
+            $total -= round($order->getTotalCanceled(), 2);
 
             if ($currentOrder && $order->getId() == $currentOrder->getId())
                 $total += round($this->helper->convertBaseAmountToOrderAmount($baseCaptureAmount, $currentOrder, $currency), 2);
@@ -607,17 +607,5 @@ class Multishipping
             return false;
 
         return true;
-    }
-
-    public function isMultishippingQuote($quoteId)
-    {
-        if (empty($quoteId))
-            return false;
-
-        $quote = $this->helper->loadQuoteById($quoteId);
-        if (!$quote || !$quote->getId())
-            return false;
-
-        return (bool)$quote->getIsMultiShipping();
     }
 }

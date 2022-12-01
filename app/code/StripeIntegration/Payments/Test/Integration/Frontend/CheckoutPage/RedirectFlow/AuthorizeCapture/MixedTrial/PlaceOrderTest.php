@@ -2,11 +2,6 @@
 
 namespace StripeIntegration\Payments\Test\Integration\Frontend\CheckoutPage\RedirectFlow\AuthorizeCapture\MixedTrial;
 
-/**
- * Magento 2.3.7-p3 does not enable these at class level
- * @magentoAppIsolation enabled
- * @magentoDbIsolation enabled
- */
 class PlaceOrderTest extends \PHPUnit\Framework\TestCase
 {
     public function setUp(): void
@@ -36,45 +31,60 @@ class PlaceOrderTest extends \PHPUnit\Framework\TestCase
         $order = $this->quote->placeOrder();
         $orderIncrementId = $order->getIncrementId();
 
+        // Confirm the payment
+        $method = "card";
+        $session = $this->tests->checkout()->retrieveSession($order, "MixedTrial");
+        $response = $this->tests->checkout()->confirm($session, $order, $method, "NewYork");
+        $this->tests->checkout()->authenticate($response->payment_intent, $method);
+        $paymentIntent = $this->tests->stripe()->paymentIntents->retrieve($response->payment_intent->id);
+
         // Assert order status, amount due, invoices
         $this->assertEquals("new", $order->getState());
         $this->assertEquals("pending", $order->getStatus());
         $this->assertEquals(0, $order->getInvoiceCollection()->count());
 
-        // Confirm the payment
-        $paymentIntent = $this->tests->confirmCheckoutSession($order, "MixedTrial", "card", "NewYork");
-
-        $trialSubscriptionAmount = 1346;
-
         // Stripe checks
-        $customerId = $paymentIntent->customer;
+        $customerId = $session->customer;
         $customer = $this->tests->stripe()->customers->retrieve($customerId);
         $this->assertCount(1, $customer->subscriptions->data);
         $this->tests->compare($customer->subscriptions->data[0], [
             "status" => "trialing",
             "plan" => [
-                "amount" => $trialSubscriptionAmount
+                "amount" => 1346
             ]
         ]);
+
+        // Trigger webhooks charge.succeeded & payment_intent.succeeded & invoice.payment_succeeded
+        $ordersCount = $this->tests->getOrdersCount();
+        $subscription = $customer->subscriptions->data[0];
+        $this->tests->event()->triggerSubscriptionEvents($subscription, $this);
+
+        // Ensure that no new order was created
+        $newOrdersCount = $this->tests->getOrdersCount();
+        $this->assertEquals($ordersCount, $newOrdersCount);
 
         // Refresh the order object
         $order = $this->tests->refreshOrder($order);
 
         // Assert order status, amount due
-        $this->assertEquals($order->getGrandTotal(), $order->getTotalPaid());
-        $this->assertEquals(0, $order->getTotalDue());
+        $this->assertEquals($session->amount_total / 100, round($order->getTotalPaid(), 2));
+        $this->assertEquals($order->getGrandTotal() - $order->getTotalPaid(), $order->getTotalDue());
         $this->assertEquals("processing", $order->getState());
         $this->assertEquals("processing", $order->getStatus());
 
         // Assert Magento invoice, invoice items, invoice totals
         $this->assertEquals(1, $order->getInvoiceCollection()->count());
         $invoice = $order->getInvoiceCollection()->getFirstItem();
-        $this->assertEquals($order->getTotalPaid(), $invoice->getGrandTotal());
-        $this->assertEquals(\Magento\Sales\Model\Order\Invoice::STATE_PAID, $invoice->getState());
+        $this->assertEquals($order->getTotalPaid(), $invoice->getGrandTotal() - 13.46);
+        $this->assertEquals(\Magento\Sales\Model\Order\Invoice::STATE_OPEN, $invoice->getState());
+
+        // Shipping should be 4.25 and 5, but Magento force uses the full order shipping amount on partial invoices
+        // https://github.com/magento/magento2/issues/26286
         $this->assertEquals(8.5, $invoice->getShippingAmount());
         $this->assertEquals(10, $invoice->getBaseShippingAmount());
 
         // Stripe checks
+        $trialSubscriptionAmount = ($order->getGrandTotal() - $order->getTotalPaid()) * 100;
         $this->assertNotEmpty($customer->subscriptions->data[0]->latest_invoice);
 
         $upcomingInvoice = $this->tests->stripe()->invoices->upcoming(['customer' => $customer->id]);
@@ -90,14 +100,9 @@ class PlaceOrderTest extends \PHPUnit\Framework\TestCase
         $newOrdersCount = $this->tests->getOrdersCount();
         $this->assertEquals($ordersCount + 1, $newOrdersCount);
 
-        // New order checks
-        $order = $this->tests->getLastOrder();
-        $this->assertEquals(15.84, $order->getBaseGrandTotal());
-        if ($this->tests->magento("<", "2.4"))
-            $this->assertEquals(13.59, $order->getGrandTotal()); // Magento 2.3.7-p3 does not perform a currency conversion on the tax_amount
-        else
-            $this->assertEquals(13.46, $order->getGrandTotal());
-
+        // Order checks
+        $order = $this->tests->refreshOrder($order);
+        $this->assertEquals($order->getGrandTotal(), $order->getTotalPaid());
         $this->assertEquals(1, $order->getInvoiceCollection()->count());
     }
 }

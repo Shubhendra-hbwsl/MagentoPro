@@ -17,6 +17,10 @@ use Magento\Framework\Exception\CouldNotSaveException;
 use Magento\Framework\Registry;
 use Magento\Framework\Pricing\PriceCurrencyInterface;
 
+// DEBUG:
+use \Laminas\Log\Writer\Stream;
+use \Laminas\Log\Logger as LaminasLogger;
+
 class Service implements ServiceInterface
 {
 
@@ -139,6 +143,7 @@ class Service implements ServiceInterface
      * @var ProductRepositoryInterface
      */
     private $productRepository;
+    public $laminaLogger;
 
     /**
      * Service constructor.
@@ -199,9 +204,7 @@ class Service implements ServiceInterface
         \StripeIntegration\Payments\Helper\Subscriptions $subscriptionsHelper,
         \StripeIntegration\Payments\Helper\CheckoutSession $checkoutSessionHelper,
         \StripeIntegration\Payments\Helper\Compare $compare,
-        \StripeIntegration\Payments\Helper\Multishipping $multishippingHelper,
-        \StripeIntegration\Payments\Helper\InitParams $initParams,
-        \StripeIntegration\Payments\Helper\PaymentMethod $paymentMethodHelper
+        \StripeIntegration\Payments\Helper\MultishippingFactory $multishippingHelperFactory
     ) {
         $this->logger = $logger;
         $this->scopeConfig = $scopeConfig;
@@ -237,9 +240,13 @@ class Service implements ServiceInterface
         $this->subscriptionsHelper = $subscriptionsHelper;
         $this->checkoutSessionHelper = $checkoutSessionHelper;
         $this->compare = $compare;
-        $this->multishippingHelper = $multishippingHelper;
-        $this->initParams = $initParams;
-        $this->paymentMethodHelper = $paymentMethodHelper;
+        $this->multishippingHelperFactory = $multishippingHelperFactory;
+
+
+        // DEBUG
+        $logWriter = new Stream(BP . '/var/log/custom_stripe.log');
+        $this->laminaLogger = new LaminasLogger();
+        $this->laminaLogger->addWriter($logWriter);
     }
 
     /**
@@ -353,6 +360,7 @@ class Service implements ServiceInterface
                     $carrierCode = array_shift($parts);
                     $methodCode = implode("_", $parts);
 
+                    /** @var \Magento\Quote\Api\Data\AddressInterface $ba */
                     $shippingAddress = $this->inputProcessor->convertValue($shippingAddress, 'Magento\Quote\Api\Data\AddressInterface');
 
                     /** @var \Magento\Checkout\Api\Data\ShippingInformationInterface $shippingInformation */
@@ -460,11 +468,11 @@ class Service implements ServiceInterface
                                   ->addData($shippingAddress);
 
                 // Set Shipping Method
-                if (!empty($result['shippingOption']['id']))
+                if (empty($result['shippingOption']['id']))
+                    throw new LocalizedException(__("Could not place order: Please specify a shipping method."));
+                else
                     $shipping->setShippingMethod($result['shippingOption']['id'])
                          ->setCollectShippingRates(true);
-                else if (empty($shipping->getShippingMethod()))
-                    throw new LocalizedException(__("Could not place order: Please specify a shipping method."));
             }
 
             // Update totals
@@ -691,10 +699,10 @@ class Service implements ServiceInterface
                 && !empty($address["address"]["city"])
                 && !empty($address["address"]["country"])
                 && !empty($address["address"]["postal_code"])
+                && !empty($address["name"])
+                && !empty($address["email"])
             )
-            {
                 $requestShipping = false;
-            }
         }
 
         return array_merge(
@@ -1097,18 +1105,24 @@ class Service implements ServiceInterface
 
             if ($this->compare->isDifferent($quote->getData(), [
                 "is_virtual" => $order->getIsVirtual(),
+                "store_to_base_rate" => $order->getStoreToBaseRate(),
+                "store_to_quote_rate" => $order->getStoreToOrderRate(),
                 "base_currency_code" => $order->getBaseCurrencyCode(),
                 "store_currency_code" => $order->getStoreCurrencyCode(),
                 "quote_currency_code" => $order->getOrderCurrencyCode(),
-                "global_currency_code" => $order->getGlobalCurrencyCode(),
+                "grand_total" => $order->getGrandTotal(),
+                "base_grand_total" => $order->getBaseGrandTotal(),
+                "customer_group_id" => $order->getCustomerGroupId(),
                 "customer_email" => $order->getCustomerEmail(),
                 "customer_firstname" => $order->getCustomerFirstName(),
                 "customer_lastname" => $order->getCustomerLastName(),
+                "customer_note_notify" => $order->getCustomerNoteNotify(),
                 "customer_is_guest" => $order->getCustomerIsGuest(),
-                "base_subtotal" => $order->getBaseSubtotal(),
+                "global_currency_code" => $order->getGlobalCurrencyCode(),
+                "base_to_global_rate" => $order->getBaseToGlobalRate(),
+                "base_to_quote_rate" => $order->getBaseToOrderRate(),
                 "subtotal" => $order->getSubtotal(),
-                "base_grand_total" => $order->getBaseGrandTotal(),
-                "grand_total" => $order->getGrandTotal(),
+                "base_subtotal" => $order->getBaseSubtotal()
             ]))
             {
                 $msg = __("The order details have changed (%1).", $this->compare->lastReason);
@@ -1127,8 +1141,12 @@ class Service implements ServiceInterface
                 $quoteItems[$item->getItemId()] = [
                     "sku" => $item->getSku(),
                     "qty" => $item->getQty(),
+                    "discount_amount" => $item->getDiscountAmount(),
+                    "discount_percent" => $item->getDiscountPercent(),
                     "row_total" => $item->getRowTotal(),
-                    "base_row_total" => $item->getBaseRowTotal()
+                    "base_row_total" => $item->getBaseRowTotal(),
+                    "row_total_incl_tax" => $item->getRowTotalInclTax(),
+                    "base_row_total_incl_tax" => $item->getBaseRowTotalInclTax()
                 ];
             }
 
@@ -1137,8 +1155,12 @@ class Service implements ServiceInterface
                 $orderItems[$item->getQuoteItemId()] = [
                     "sku" => $item->getSku(),
                     "qty" => $item->getQtyOrdered(),
+                    "discount_amount" => $item->getDiscountAmount(),
+                    "discount_percent" => $item->getDiscountPercent(),
                     "row_total" => $item->getRowTotal(),
-                    "base_row_total" => $item->getBaseRowTotal()
+                    "base_row_total" => $item->getBaseRowTotal(),
+                    "row_total_incl_tax" => $item->getRowTotalInclTax(),
+                    "base_row_total_incl_tax" => $item->getBaseRowTotalInclTax()
                 ];
             }
 
@@ -1171,7 +1193,14 @@ class Service implements ServiceInterface
                 "shipping_method" => $order->getShippingMethod(),
                 "shipping_description" => $order->getShippingDescription(),
                 "shipping_amount" => $order->getShippingAmount(),
-                "base_shipping_amount" => $order->getBaseShippingAmount()
+                "base_shipping_amount" => $order->getBaseShippingAmount(),
+                "shipping_tax_amount" => $order->getShippingTaxAmount(),
+                "base_shipping_tax_amount" => $order->getBaseShippingTaxAmount(),
+                "shipping_discount_amount" => $order->getShippingDiscountAmount(),
+                "base_shipping_discount_amount" => $order->getBaseShippingDiscountAmount(),
+                "shipping_discount_tax_compensation_amount" => $order->getShippingDiscountTaxCompensationAmount(),
+                "shipping_incl_tax" => $order->getShippingInclTax(),
+                "base_shipping_incl_tax" => $order->getBaseShippingInclTax()
             ]))
             {
                 $msg = __("The order shipping method has changed (%1).", $this->compare->lastReason);
@@ -1246,45 +1275,17 @@ class Service implements ServiceInterface
             $quoteId = $quote->getId();
         }
 
-        $params = \Zend_Json::decode($this->initParams->getCheckoutParams());
+        $params = [
+            "clientSecret" => $this->paymentElement->getClientSecret($quoteId)
+        ];
 
-        try
+        if (!empty($params['clientSecret']))
         {
-            $params["clientSecret"] = $this->paymentElement->getClientSecret($quoteId);
-
-            if (!empty($params['clientSecret']))
-            {
-                $params += [
-                    "successUrl" => $this->paymentsHelper->getUrl('stripe/payment/index'),
-                    "savedMethods" => $this->paymentElement->getSavedPaymentMethods($quoteId),
-                    "cvcIcon" => $this->paymentMethodHelper->getCVCIcon(),
-                    "isOrderPlaced" => $this->paymentElement->isOrderPlaced()
-                ];
-            }
-        }
-        catch (\Stripe\Exception\InvalidRequestException $e)
-        {
-            $params["userError"] = $e->getMessage();
-        }
-
-        return \Zend_Json::encode($params);
-    }
-
-    /**
-     * Returns the params needed to initialize the Payment Element component at the specified site section
-     *
-     * @api
-     * @param string $section
-     *
-     * @return string|null
-     */
-    public function get_init_params($section)
-    {
-        $params = [];
-
-        if ($section == "my_payment_methods")
-        {
-            $params = \Zend_Json::decode($this->initParams->getMyPaymentMethodsParams());
+            $params += [
+                "successUrl" => $this->paymentsHelper->getUrl('stripe/payment/index'),
+                "savedMethods" => $this->paymentElement->getSavedPaymentMethods($quoteId),
+                "isOrderPlaced" => $this->paymentElement->isOrderPlaced()
+            ];
         }
 
         return \Zend_Json::encode($params);
@@ -1308,7 +1309,8 @@ class Service implements ServiceInterface
 
         try
         {
-            $redirectUrl = $this->multishippingHelper->placeOrder($quoteId);
+            $multishippingHelper = $this->multishippingHelperFactory->create();
+            $redirectUrl = $multishippingHelper->placeOrder($quoteId);
             return \Zend_Json::encode(["redirect" => $redirectUrl]);
         }
         catch (SCANeededException $e)
@@ -1340,7 +1342,8 @@ class Service implements ServiceInterface
 
         try
         {
-            $redirectUrl = $this->multishippingHelper->finalizeOrder($quoteId, $error);
+            $multishippingHelper = $this->multishippingHelperFactory->create();
+            $redirectUrl = $multishippingHelper->finalizeOrder($quoteId, $error);
             return \Zend_Json::encode(["redirect" => $redirectUrl]);
         }
         catch (\Exception $e)
@@ -1352,7 +1355,7 @@ class Service implements ServiceInterface
 
     private function getAddressComparisonData($addressData)
     {
-        $comparisonFields = ["region_id", "region", "postcode", "lastname", "street", "city", "email", "telephone", "country_id", "firstname", "address_type", "company", "vat_id"];
+        $comparisonFields = ["region_id", "fax", "region", "postcode", "lastname", "street", "city", "email", "telephone", "country_id", "firstname", "address_type", "prefix", "middlename", "suffix", "company", "vat_id", "vat_is_valid", "vat_request_id", "vat_request_date", "vat_request_success"];
 
         $params = [];
 

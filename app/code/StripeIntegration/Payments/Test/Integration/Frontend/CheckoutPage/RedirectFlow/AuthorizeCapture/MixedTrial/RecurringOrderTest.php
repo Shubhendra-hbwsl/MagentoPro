@@ -2,11 +2,6 @@
 
 namespace StripeIntegration\Payments\Test\Integration\Frontend\CheckoutPage\RedirectFlow\AuthorizeCapture\MixedTrial;
 
-/**
- * Magento 2.3.7-p3 does not enable these at class level
- * @magentoAppIsolation enabled
- * @magentoDbIsolation enabled
- */
 class RecurringOrderTest extends \PHPUnit\Framework\TestCase
 {
     public function setUp(): void
@@ -43,15 +38,14 @@ class RecurringOrderTest extends \PHPUnit\Framework\TestCase
         // Refresh the order
         $order = $this->tests->refreshOrder($order);
         $nonSubscriptionsAmount = 13.46;
-        $baseNonSubscriptionsAmount = 15.84;
-        $this->assertEquals($order->getGrandTotal(), $order->getTotalPaid());
+        $this->assertEquals($nonSubscriptionsAmount, $order->getTotalPaid());
         $this->assertEquals("processing", $order->getState());
         $this->assertEquals("processing", $order->getStatus());
 
         // Check the order invoices
         $invoiceCollection = $order->getInvoiceCollection();
         $invoice = $invoiceCollection->getFirstItem();
-        $this->assertEquals(\Magento\Sales\Model\Order\Invoice::STATE_PAID, $invoice->getState());
+        $this->assertEquals(\Magento\Sales\Model\Order\Invoice::STATE_OPEN, $invoice->getState());
 
         // Check that no new order was created
         $newOrdersCount = $this->tests->getOrdersCount();
@@ -62,6 +56,7 @@ class RecurringOrderTest extends \PHPUnit\Framework\TestCase
 
         // Refresh the order
         $order = $this->tests->refreshOrder($order);
+        $this->assertEquals($nonSubscriptionsAmount, $order->getTotalPaid());
         $this->assertEquals("complete", $order->getState());
         $this->assertEquals("complete", $order->getStatus());
 
@@ -82,7 +77,8 @@ class RecurringOrderTest extends \PHPUnit\Framework\TestCase
         $this->assertEquals("complete", $order->getStatus());
 
         // Trigger webhook events for recurring order
-        $this->tests->event()->trigger("invoice.payment_succeeded", $paymentIntent->invoice, ['billing_reason' => 'subscription_cycle']);
+        $this->tests->event()->trigger("charge.succeeded", $paymentIntent->charges->data[0]->id);
+        $this->tests->event()->trigger("invoice.payment_succeeded", $paymentIntent->invoice, ['billing_reason' => 'subscription_update']);
 
         $newOrdersCount = $this->tests->getOrdersCount();
         $this->assertEquals($ordersCount + 2, $newOrdersCount);
@@ -94,13 +90,7 @@ class RecurringOrderTest extends \PHPUnit\Framework\TestCase
         // Get the newly created order
         $newOrder = $this->tests->getLastOrder();
         // Assert new order, invoices, invoice items, invoice totals
-
-        $this->assertEquals($order->getBaseGrandTotal() - $baseNonSubscriptionsAmount, $newOrder->getBaseGrandTotal());
-        if ($this->tests->magento("<", "2.4"))
-            $this->assertEquals(13.59, $newOrder->getGrandTotal()); // Magento 2.3.7-p3 does not perform a currency conversion on the tax_amount
-        else
-            $this->assertEquals($order->getGrandTotal() - $nonSubscriptionsAmount, $newOrder->getGrandTotal());
-
+        $this->assertEquals($order->getGrandTotal() - $nonSubscriptionsAmount, $newOrder->getGrandTotal());
         $this->assertNotEquals($order->getIncrementId(), $newOrder->getIncrementId());
         $this->assertEquals("processing", $newOrder->getState());
         $this->assertEquals("processing", $newOrder->getStatus());

@@ -12,6 +12,10 @@ class PaymentMethods extends \Magento\Framework\App\Action\Action
      */
     protected $resultPageFactory;
 
+    /**
+     * @param \Magento\Framework\App\Action\Context $context
+     * @param \Magento\Framework\View\Result\PageFactory resultPageFactory
+     */
     public function __construct(
         \Magento\Framework\App\Action\Context $context,
         \Magento\Framework\View\Result\PageFactory $resultPageFactory,
@@ -37,22 +41,12 @@ class PaymentMethods extends \Magento\Framework\App\Action\Action
         $params = $this->getRequest()->getParams();
 
         if (isset($params['delete']))
-            return $this->delete($params['delete'], $this->getRequest()->getParam("fingerprint", null));
-        else if (isset($params['redirect_status']))
-            return $this->outcome($params['redirect_status'], $params);
+            return $this->delete($params['delete']);
 
         return $this->resultPageFactory->create();
     }
 
-    public function outcome($code, $params)
-    {
-        if ($code == "succeeded")
-            $this->helper->addSuccess(__("The payment method has been successfully added."));
-
-        $this->_redirect('stripe/customer/paymentmethods');
-    }
-
-    public function delete($token, $fingerprint = null)
+    public function delete($token)
     {
         try
         {
@@ -65,14 +59,14 @@ class PaymentMethods extends \Magento\Framework\App\Action\Action
                 throw new LocalizedException($message);
             }
 
-            $card = $this->stripeCustomer->deletePaymentMethod($token, $fingerprint);
+            $card = $this->stripeCustomer->deletePaymentMethod($token);
 
             // In case we deleted a source
             if (isset($card->card))
                 $card = $card->card;
 
             if (!empty($card->last4))
-                $this->helper->addSuccess(__("Card •••• %1 has been deleted.", $card->last4));
+                $this->helper->addSuccess(__("Card **** %1 has been deleted.", $card->last4));
             else
                 $this->helper->addSuccess(__("The payment method has been deleted."));
         }

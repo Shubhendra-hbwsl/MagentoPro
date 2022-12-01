@@ -24,13 +24,24 @@ class PaymentMethod extends \Magento\Payment\Model\Method\Adapter
     protected $_isInitializeNeeded      = false;
     protected $_canUseForMultishipping  = false;
 
+    /**
+     * @param ManagerInterface $eventManager
+     * @param ValueHandlerPoolInterface $valueHandlerPool
+     * @param PaymentDataObjectFactory $paymentDataObjectFactory
+     * @param string $code
+     * @param string $formBlockType
+     * @param string $infoBlockType
+     * @param StripeIntegration\Payments\Model\Config $config
+     * @param CommandPoolInterface $commandPool
+     * @param ValidatorPoolInterface $validatorPool
+     */
     public function __construct(
         \Magento\Framework\Event\ManagerInterface $eventManager,
         \Magento\Payment\Gateway\Config\ValueHandlerPoolInterface $valueHandlerPool,
         \Magento\Payment\Gateway\Data\PaymentDataObjectFactory $paymentDataObjectFactory,
-        string $code,
-        string $formBlockType,
-        string $infoBlockType,
+        $code,
+        $formBlockType,
+        $infoBlockType,
         \StripeIntegration\Payments\Model\Config $config,
         \StripeIntegration\Payments\Model\Method\Checkout $checkoutMethod,
         \StripeIntegration\Payments\Model\PaymentElement $paymentElement,
@@ -143,8 +154,7 @@ class PaymentMethod extends \Magento\Payment\Model\Method\Adapter
                 $token = $this->helper->cleanToken($token);
 
                 $orders = $this->helper->getOrdersByTransactionId($token);
-                $quoteId = (($payment->getOrder() && $payment->getOrder()->getQuoteId()) ? $payment->getOrder()->getQuoteId() : null);
-                if (count($orders) > 1 && $this->multishippingHelper->isMultishippingQuote($quoteId))
+                if (count($orders) > 1)
                     $this->multishippingHelper->captureOrdersFromAdminArea($orders, $token, $payment, $amount, $this->config->retryWithSavedCard());
                 else
                     $this->helper->capture($token, $payment, $amount, $this->config->retryWithSavedCard());
@@ -198,7 +208,6 @@ class PaymentMethod extends \Magento\Payment\Model\Method\Adapter
         $payment->setIsTransactionPending(true); // not authorized yet
         $payment->setIsTransactionClosed(false); // not captured
         $payment->getOrder()->setCanSendNewEmailFlag(false);
-        $this->helper->overrideInvoiceActionComment($payment, __("Order placed, beginning the payment process."));
     }
 
     public function payWithServerSideConfirmation(InfoInterface $payment, $amount)
@@ -235,7 +244,7 @@ class PaymentMethod extends \Magento\Payment\Model\Method\Adapter
         catch (SCANeededException $e)
         {
             if ($this->helper->isAdmin())
-                $this->helper->dieWithError(__("This payment method cannot be used because it requires a customer authentication. To avoid authentication in the admin area, please contact Stripe support to request access to the MOTO gate for your Stripe account."));
+                $this->helper->dieWithError(__("This payment method cannot be used because it requires a customer authentication. To avoid authentication in the admin area, please contact magento@stripe.com to request access to the MOTO gate for your Stripe account."));
 
             // Front-end case (Payment Request API, REST API, GraphQL API), this will trigger the 3DS modal.
             $this->helper->dieWithError("Authentication Required: $clientSecret");
@@ -246,12 +255,6 @@ class PaymentMethod extends \Magento\Payment\Model\Method\Adapter
 
     public function cancel(InfoInterface $payment, $amount = null)
     {
-        if ($payment->getCancelOfflineWithComment())
-        {
-            $this->helper->overrideCancelActionComment($payment, $payment->getCancelOfflineWithComment());
-            return $this;
-        }
-
         try
         {
             $paymentIntentId = $this->refundsHelper->getTransactionId($payment);
@@ -345,14 +348,6 @@ class PaymentMethod extends \Magento\Payment\Model\Method\Adapter
 
     public function getConfigPaymentAction()
     {
-        $info = $this->getInfoInstance();
-        if ($info && $info->getAdditionalInformation("client_side_confirmation"))
-        {
-            // With client side confirmations, a pending order will be created. We do not want to invoice
-            // the order until the charge.succeeded event arrives back from Stripe.
-            return \Magento\Payment\Model\Method\AbstractMethod::ACTION_AUTHORIZE;
-        }
-
         // Subscriptions do not support authorize only mode
         if ($this->helper->hasSubscriptions())
             return \Magento\Payment\Model\Method\AbstractMethod::ACTION_AUTHORIZE_CAPTURE;

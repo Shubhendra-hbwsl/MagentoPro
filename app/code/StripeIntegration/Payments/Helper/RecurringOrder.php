@@ -99,7 +99,7 @@ class RecurringOrder
 
         $subscription = $this->getSubscriptionFrom($invoice);
         $subscriptionAmount = $this->convertToMagentoAmount($subscription->amount / $subscription->quantity, $invoice->currency);
-        $baseSubscriptionAmount = round(floatval($subscriptionAmount) / floatval($order->getBaseToOrderRate()), 2);
+        $baseSubscriptionAmount = round($subscriptionAmount / $order->getBaseToOrderRate(), 2);
 
         $details = [
             "invoice_amount" => $this->convertToMagentoAmount($invoice->amount_paid, $invoice->currency),
@@ -287,17 +287,17 @@ class RecurringOrder
         if (empty($details["products"]))
             throw new WebhookException("This invoice does not have any product IDs associated with it", 202);
 
-        if (!is_numeric($details["invoice_amount"])) // Trial subcription invoices have an amount of 0
+        if (empty($details["invoice_amount"]) && $details["invoice_amount"] !== 0) // Trial subcription invoices have an amount of 0
             throw new WebhookException("Could not determine the subscription amount from the invoice data", 202);
 
-        $details["base_invoice_amount"] = round(floatval($details["invoice_amount"]) * floatval($order->getBaseToOrderRate()), 2);
-        $details["base_shipping_amount"] = round(floatval($details["shipping_amount"]) * floatval($order->getBaseToOrderRate()), 2);
-        $details["base_initial_fee_amount"] = round(floatval($details["initial_fee_amount"]) * floatval($order->getBaseToOrderRate()), 2);
+        $details["base_invoice_amount"] = round($details["invoice_amount"] * $order->getBaseToOrderRate(), 2);
+        $details["base_shipping_amount"] = round($details["shipping_amount"] * $order->getBaseToOrderRate(), 2);
+        $details["base_initial_fee_amount"] = round($details["initial_fee_amount"] * $order->getBaseToOrderRate(), 2);
 
         foreach ($details["products"] as &$product)
         {
-            $product["base_amount"] = round(floatval($product["amount"]) * floatval($order->getBaseToOrderRate()), 2);
-            $product["base_tax_amount"] = round(floatval($product["tax_amount"]) * floatval($order->getBaseToOrderRate()), 2);
+            $product["base_amount"] = round($product["amount"] * $order->getBaseToOrderRate(), 2);
+            $product["base_tax_amount"] = round($product["tax_amount"] * $order->getBaseToOrderRate(), 2);
         }
 
         return $details;
@@ -318,7 +318,7 @@ class RecurringOrder
         if ($this->paymentsHelper->isZeroDecimal($currency))
             $cents = 1;
         $amount = ($amount / $cents);
-        return floatval($amount);
+        return $amount;
     }
 
     public function reOrder($originalOrder, $invoiceDetails)
@@ -332,8 +332,11 @@ class RecurringOrder
         $this->setQuotePaymentMethodFrom($originalOrder, $quote);
 
         // Collect Totals & Save Quote
-        $quote->setTotalsCollectedFlag(false)->collectTotals();
-        $this->paymentsHelper->saveQuote($quote);
+        $quote->setTotalsCollectedFlag(false)->collectTotals()->save();
+
+        // Compensate for tax rounding algorithm differences between Stripe and Magento
+        $this->paymentsHelper->setQuoteTaxFrom($invoiceDetails['stripe_invoice_amount'], $invoiceDetails['invoice_currency'], $quote);
+        $quote->save();
 
         // Create Order From Quote
         $order = $this->quoteManagement->submit($quote);

@@ -10,6 +10,13 @@ use Symfony\Component\Console\Input\InputOption;
 
 class StripeSubscriptionsCommand extends Command
 {
+    // public function __construct(
+    //     \Magento\Framework\App\State $state
+    // ) {
+    //     $state->setAreaCode('frontend');
+    //     parent::__construct();
+    // }
+
     protected function configure()
     {
         $this->setName('stripe:subscriptions:migrate-stripe-subscriptions');
@@ -22,16 +29,7 @@ class StripeSubscriptionsCommand extends Command
         if (!class_exists('\Stripe\Stripe'))
             throw new \Exception("The Stripe PHP library has not been installed.");
 
-        $objectManager = \Magento\Framework\App\ObjectManager::getInstance();
-
-        $areaCode = $objectManager->create('StripeIntegration\Payments\Helper\AreaCode');
-        $areaCode->setAreaCode();
-
-        $config = $objectManager->create('StripeIntegration\Payments\Model\Config');
-        $appInfo = $config->getAppInfo();
-
         \Stripe\Stripe::setApiVersion(\StripeIntegration\Payments\Model\Config::STRIPE_API);
-        \Stripe\Stripe::setAppInfo($appInfo['name'], $appInfo['version'], $appInfo['url'], $appInfo['partner_id']);
         \Stripe\Stripe::setApiKey($input->getArgument('Stripe Secret API Key'));
 
         $profiles = $this->fetchRecurringProfiles();
@@ -45,7 +43,7 @@ class StripeSubscriptionsCommand extends Command
             if ($lastSubscriptionID)
                 $params['starting_after'] = $lastSubscriptionID;
 
-            $subscriptions = $config->getStripeClient()->subscriptions->all($params);
+            $subscriptions = \Stripe\Subscription::all($params);
 
             foreach ($subscriptions->autoPagingIterator() as $subscription)
             {
@@ -56,7 +54,8 @@ class StripeSubscriptionsCommand extends Command
                     try
                     {
                         $metadata = $this->getSubscriptionMetadata($profile);
-                        $config->getStripeClient()->subscriptions->update($subscription->id, ['metadata' => $metadata]);
+                        $subscription['metadata'] = $metadata;
+                        $subscription->save();
                     }
                     catch (\Exception $e)
                     {

@@ -53,11 +53,9 @@ class WebhooksUnconfigured implements \Magento\Framework\Notification\MessageInt
 
         $allWebhooks = $this->webhooksCollection->getAllWebhooks();
 
-        $instructions = "You can configure webhooks manually with the following command: <code style=\"margin-left: 5px; color: brown\">bin/magento stripe:webhooks:configure</code>";
-
         if ($allWebhooks->count() == 0)
         {
-            $this->displayedText = "Stripe webhooks could not be configured automatically. $instructions";
+            $this->displayedText = "An initial configuration of Stripe Webhooks is necessary from Stores &rarr; Configuration &rarr; Sales &rarr; Payment Methods &rarr; Stripe &rarr; General Settings &rarr; Webhooks.";
 
             return;
         }
@@ -90,7 +88,7 @@ class WebhooksUnconfigured implements \Magento\Framework\Notification\MessageInt
             if ($webhook->getConfigVersion() < \StripeIntegration\Payments\Helper\WebhooksSetup::VERSION)
             {
                 $version = \StripeIntegration\Payments\Model\Config::$moduleVersion;
-                $this->displayedText = "Stripe Payments v$version has added new webhook events or is using a newer webhooks API. $instructions";
+                $this->displayedText = "Stripe Payments v$version has added new webhook events or is using a newer webhooks API. Please reconfigure webhooks from Stores &rarr; Configuration &rarr; Sales &rarr; Payment Methods &rarr; Stripe &rarr; General Settings &rarr; Webhooks.";
 
                 return;
             }
@@ -121,7 +119,7 @@ class WebhooksUnconfigured implements \Magento\Framework\Notification\MessageInt
 
             $storeNamesText = implode(", ", $storeNames);
 
-            $this->displayedText = "Stripe webhooks could not be configured automatically for: $storeNamesText - $instructions";
+            $this->displayedText = "Stripe Webhooks have not yet been configured for: $storeNamesText - You can configure them from Stores &rarr; Configuration &rarr; Sales &rarr; Payment Methods &rarr; Stripe &rarr; General Settings &rarr; Webhooks.";
 
             return;
         }

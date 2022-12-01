@@ -20,8 +20,7 @@ define(
         'mage/storage',
         'mage/url',
         'Magento_CheckoutAgreements/js/model/agreement-validator',
-        'Magento_Customer/js/customer-data',
-        'Magento_Checkout/js/model/payment-service'
+        'Magento_Customer/js/customer-data'
     ],
     function (
         ko,
@@ -44,8 +43,7 @@ define(
         storage,
         urlBuilder,
         agreementValidator,
-        customerData,
-        paymentService
+        customerData
     ) {
         'use strict';
 
@@ -57,8 +55,6 @@ define(
             },
             redirectAfterPlaceOrder: false,
             elements: null,
-            initParams: null,
-            paymentElement: null,
 
             initObservable: function ()
             {
@@ -71,9 +67,6 @@ define(
                         'stripePaymentsError',
                         'permanentError',
                         'isOrderPlaced',
-                        'isInitializing',
-                        'isInitialized',
-                        'useQuoteBillingAddress',
 
                         // Saved payment methods dropdown
                         'dropdownOptions',
@@ -83,21 +76,12 @@ define(
 
                 var self = this;
 
-                this.initParams = window.checkoutConfig.payment["stripe_payments"].initParams;
                 this.isPaymentFormVisible(false);
                 this.isOrderPlaced(false);
-                this.isInitializing(true);
-                this.isInitialized(false);
-                this.useQuoteBillingAddress(false);
-                this.collectCvc = ko.computed(this.shouldCollectCvc.bind(this));
-                this.isAmex = ko.computed(this.isAmexSelected.bind(this));
-                this.cardCvcElement = null;
 
                 trialingSubscriptions().refresh(quote); // This should be initially retrieved via a UIConfig
 
                 var currentTotals = quote.totals();
-                var currentShippingAddress = quote.shippingAddress();
-                var currentBillingAddress = quote.billingAddress();
 
                 quote.totals.subscribe(function (totals)
                 {
@@ -112,43 +96,16 @@ define(
                 }
                 , this);
 
-                quote.paymentMethod.subscribe(function (method)
-                {
-                    if (method.method == this.getCode() && !this.isInitializing())
-                    {
-                        // We intentionally re-create the element because its container element may have changed
-                        var params = window.checkoutConfig.payment["stripe_payments"].initParams;
-                        this.initPaymentForm(params);
-                    }
-                }, this);
-
-                quote.billingAddress.subscribe(function(address)
-                {
-                    if (address && self.paymentElement && self.paymentElement.update && !self.isPaymentFormComplete())
-                    {
-                        // Remove the postcode & country fields if a billing address has been specified
-                        var params = window.checkoutConfig.payment["stripe_payments"].initParams;
-                        self.paymentElement.update(self.getPaymentElementOptions(params));
-                    }
-                });
-
                 return this;
             },
 
             initSavedPaymentMethods: function()
             {
-                // If it is already initialized, do not re-initialize
-                if (this.dropdownOptions())
-                    return;
-
                 var methods = this.getStripeParam("savedMethods");
                 var options = [];
 
                 for (const i in methods)
-                {
-                    if (methods.hasOwnProperty(i))
-                        options.push(methods[i]);
-                }
+                    options.push(methods[i]);
 
                 if (options.length > 0)
                 {
@@ -164,36 +121,8 @@ define(
                 this.dropdownOptions(options);
             },
 
-            shouldCollectCvc: function()
-            {
-                var selection = this.selection();
-
-                if (!selection)
-                    return false;
-
-                if (selection.type != 'card')
-                    return false;
-
-                return !!selection.cvc;
-            },
-
-            isAmexSelected: function()
-            {
-                var selection = this.selection();
-
-                if (!selection)
-                    return false;
-
-                if (selection.type != 'card')
-                    return false;
-
-                return (selection.brand == "amex");
-            },
-
             newPaymentMethod: function()
             {
-                this.messageContainer.clear();
-
                 this.selection({
                     type: 'new',
                     value: 'new',
@@ -202,11 +131,6 @@ define(
                 });
                 this.isDropdownOpen(false);
                 this.isPaymentFormVisible(true);
-                if (!this.isInitialized())
-                {
-                    this.onContainerRendered();
-                    this.isInitialized(true);
-                }
             },
 
             getPaymentMethodId: function()
@@ -245,33 +169,39 @@ define(
                 if (!clientSecret)
                     return;
 
-                this.resetInitParams();
-                this.getInitParams(function(params)
+                getClientSecretAction(function(result, outcome, response)
                 {
-                    var clientSecret2 = self.getStripeParam("clientSecret");
+                    try
+                    {
+                        var params = JSON.parse(result);
 
-                    if (clientSecret2 && clientSecret != clientSecret2)
-                        self.initPaymentForm.bind(self)(params);
-                },
-                function(exception)
-                {
-                    return self.crash(exception.message);
+                        for (const prop in params)
+                        {
+                            if (params.hasOwnProperty(prop))
+                                window.checkoutConfig.payment["stripe_payments"].initParams[prop] = params[prop];
+                        }
+
+                        var clientSecret2 = self.getStripeParam("clientSecret");
+
+                        if (clientSecret2 && clientSecret != clientSecret2)
+                            self.initPaymentForm.bind(self)(params);
+                    }
+                    catch (e)
+                    {
+                        return self.crash(e.message);
+                    }
                 });
             },
 
-            resetInitParams: function()
+            onPaymentElementContainerRendered: function()
             {
-                this.initParams = null;
-            },
-
-            getInitParams: function(onSuccess, onError)
-            {
-                try
+                var self = this;
+                var params = window.checkoutConfig.payment["stripe_payments"].initParams;
+                this.isLoading(true);
+                initStripe(params, function(err)
                 {
-                    if (this.initParams)
-                        return onSuccess(this.initParams);
-
-                    var self = this;
+                    if (err)
+                        return self.crash(err);
 
                     getClientSecretAction(function(result, outcome, response)
                     {
@@ -285,132 +215,26 @@ define(
                                     window.checkoutConfig.payment["stripe_payments"].initParams[prop] = params[prop];
                             }
 
-                            self.initParams = window.checkoutConfig.payment["stripe_payments"].initParams;
-                            return onSuccess(self.initParams);
+                            self.initPaymentForm.bind(self)(params);
                         }
                         catch (e)
                         {
-                            return onError(e);
+                            return self.crash(e.message);
                         }
                     });
-                }
-                catch (e)
-                {
-                    return onError(e);
-                }
-            },
-
-            onPaymentElementContainerRendered: function()
-            {
-                var self = this;
-                this.isLoading(true);
-                initStripe(this.initParams, function(err)
-                {
-                    if (err)
-                        return self.crash(err);
-
-                    if (!self.getStripeParam("clientSecret"))
-                        self.resetInitParams();
-
-                    self.getInitParams(function(params)
-                    {
-                        self.initSavedPaymentMethods();
-                        self.initPaymentForm(params);
-                    },
-                    function(exception)
-                    {
-                        return self.crash(exception.message);
-                    });
                 });
-            },
-
-            onContainerRendered: function()
-            {
-                this.onPaymentElementContainerRendered();
-            },
-
-            getCardCVCOptions: function()
-            {
-                return {
-                  style: {
-                    base: {
-                  //     iconColor: '#c4f0ff',
-                  //     color: '#fff',
-                  //     fontWeight: '500',
-                  //     fontFamily: 'Roboto, Open Sans, Segoe UI, sans-serif',
-                      fontSize: '16px',
-                  //     fontSmoothing: 'antialiased',
-                  //     ':-webkit-autofill': {
-                  //       color: '#fce883',
-                  //     },
-                  //     '::placeholder': {
-                  //       color: '#87BBFD',
-                  //     },
-                  //   },
-                  //   invalid: {
-                  //     iconColor: '#FFC7EE',
-                  //     color: '#FFC7EE',
-                    },
-                  },
-                };
-            },
-
-            onCvcContainerRendered: function()
-            {
-                var self = this;
-
-                initStripe(this.initParams, function(err)
-                {
-                    if (err)
-                        return self.crash(err);
-
-                    if (!self.getStripeParam("clientSecret"))
-                        self.resetInitParams();
-
-                    self.getInitParams(function(params)
-                    {
-                        var elements = stripe.stripeJs.elements({
-                            locale: params.locale
-                        });
-                        self.cardCvcElement = elements.create('cardCvc', self.getCardCVCOptions());
-                        self.cardCvcElement.mount('#stripe-card-cvc-element');
-                        self.cardCvcElement.on('change', self.onCvcChange.bind(self));
-                    },
-                    function(exception)
-                    {
-                        console.error(exception);
-                    });
-                });
-            },
-
-            onCvcChange: function(event)
-            {
-                if (event.error)
-                    this.selection().cvcError = event.error.message;
-                else
-                    this.selection().cvcError = null;
             },
 
             crash: function(message)
             {
                 this.isLoading(false);
-                var userError = this.getStripeParam("userError");
-                if (userError)
-                    this.permanentError(userError);
-                else
-                    this.permanentError($t("Sorry, this payment method is not available. Please contact us for assistance."));
-
+                this.permanentError($t("Sorry, this payment method is not available. Please contact us for assistance."));
                 console.error("Error: " + message);
             },
 
             softCrash: function(message)
             {
-                var userError = this.getStripeParam("userError");
-                if (userError)
-                    this.showError(userError);
-                else
-                    this.showError($t("Sorry, this payment method is not available. Please contact us for assistance."));
-
+                this.showError($t("Sorry, this payment method is not available. Please contact us for assistance."));
                 console.error("Error: " + message);
             },
 
@@ -420,26 +244,8 @@ define(
                 this.softCrash(message);
             },
 
-            isCollapsed: function()
-            {
-                if (this.isChecked() == this.getCode())
-                {
-                    return false;
-                }
-                else
-                {
-                    return true;
-                }
-            },
-
             initPaymentForm: function(params)
             {
-                this.isInitializing(false);
-                this.isLoading(false);
-
-                if (this.isCollapsed()) // Don't render PE with a height of 0
-                    return;
-
                 if (document.getElementById('stripe-payment-element') === null)
                     return this.crash("Cannot initialize Payment Element on a DOM that does not contain a div.stripe-payment-element.");;
 
@@ -452,63 +258,17 @@ define(
                 if (this.getStripeParam("isOrderPlaced"))
                     this.isOrderPlaced(true);
 
+                this.initSavedPaymentMethods();
+
                 var elements = this.elements = stripe.stripeJs.elements({
                     locale: params.locale,
                     clientSecret: params.clientSecret,
                     appearance: this.getStripePaymentElementOptions()
                 });
 
-                this.paymentElement = elements.create('payment', this.getPaymentElementOptions(params));
-                this.paymentElement.mount('#stripe-payment-element');
-                this.paymentElement.on('change', this.onChange.bind(this));
-            },
-
-            getPaymentElementOptions: function(params)
-            {
-                var options = {};
-                if (typeof params.wallets != "undefined" && params.wallets)
-                    options.wallets = params.wallets;
-
-                var billingAddress = quote.billingAddress();
-
-                if (billingAddress)
-                {
-                    try
-                    {
-                        this.useQuoteBillingAddress(true);
-
-                        var hasState = (billingAddress.region || billingAddress.regionCode || billingAddress.regionId);
-
-                        options.fields = {
-                            billingDetails: {
-                                name: 'never',
-                                email: 'never',
-                                phone: (billingAddress.telephone ? 'never' : 'auto'),
-                                address: {
-                                    line1: ((billingAddress.street.length > 0) ? 'never' : 'auto'),
-                                    line2: ((billingAddress.street.length > 0) ? 'never' : 'auto'),
-                                    city: billingAddress.city ? 'never' : 'auto',
-                                    state: hasState ? 'never' : 'auto',
-                                    country: billingAddress.countryId ? 'never' : 'auto',
-                                    postalCode: billingAddress.postcode ? 'never' : 'auto'
-                                }
-                            }
-                        };
-                    }
-                    catch (e)
-                    {
-                        this.useQuoteBillingAddress(false);
-
-                        options.fields = {};
-                        console.warn('Could not retrieve billing address: '  + e.message);
-                    }
-                }
-                else
-                {
-                    this.useQuoteBillingAddress(false);
-                }
-
-                return options;
+                var paymentElement = elements.create('payment');
+                paymentElement.mount('#stripe-payment-element');
+                paymentElement.on('change', this.onChange.bind(this));
             },
 
             onChange: function(event)
@@ -536,9 +296,6 @@ define(
             isPlaceOrderEnabled: function()
             {
                 if (this.stripePaymentsError())
-                    return false;
-
-                if (this.permanentError())
                     return false;
 
                 return this.isBillingAddressSet();
@@ -621,12 +378,10 @@ define(
 
             placeOrder: function()
             {
-                this.messageContainer.clear();
-
                 if (!this.isPaymentFormComplete() && !this.getPaymentMethodId())
                     return this.showError($t('Please complete your payment details.'));
 
-                if (!this.validate())
+                if (!additionalValidators.validate())
                     return;
 
                 this.clearErrors();
@@ -666,7 +421,6 @@ define(
                     // before placing the new one.
                     updateCartAction(this.getPaymentMethodId(), function(result, outcome, response)
                     {
-                        self.isLoading(false);
                         placeNewOrder();
                     });
                 }
@@ -676,16 +430,9 @@ define(
 
             placeNewOrder: function()
             {
-                var self = this;
-
                 this.getPlaceOrderDeferredObject()
                     .fail(this.handlePlaceOrderErrors.bind(this))
-                    .done(this.onOrderPlaced.bind(this))
-                    .always(function()
-                    {
-                        self.isLoading(false);
-                        self.isPlaceOrderEnabled(true);
-                    });
+                    .done(this.onOrderPlaced.bind(this));
             },
 
             getSelectedMethod: function(param)
@@ -703,7 +450,7 @@ define(
             onOrderPlaced: function(result, outcome, response)
             {
                 if (!this.isOrderPlaced() && isNaN(result))
-                    return this.softCrash("The order was placed but the response from the server did not include a numeric order ID.");
+                    return this.softCrash("The order was placed but the response from the server did not include a numeric order ID. The response was ");
                 else
                     this.isOrderPlaced(true);
 
@@ -731,16 +478,6 @@ define(
                     return_url: this.getStripeParam("successUrl")
                 };
 
-                var dropDownSelection = this.selection();
-                if (dropDownSelection && dropDownSelection.type == "card" && dropDownSelection.cvc == 1 && !isSetup)
-                {
-                    confirmParams.payment_method_options = {
-                        card: {
-                            cvc: this.cardCvcElement
-                        }
-                    };
-                }
-
                 this.confirm(selectedMethod, confirmParams, clientSecret, isSetup, onConfirm, onFail);
             },
 
@@ -764,8 +501,6 @@ define(
                             stripe.stripeJs.confirmBoletoSetup(clientSecret, confirmParams).then(onConfirm, onFail);
                         else if (methodType == "acss_debit")
                             stripe.stripeJs.confirmAcssDebitSetup(clientSecret, confirmParams).then(onConfirm, onFail);
-                        else if (methodType == "us_bank_account")
-                            stripe.stripeJs.confirmUsBankAccountSetup(clientSecret, confirmParams).then(onConfirm, onFail);
                         else
                             self.showError($t("This payment method is not supported."));
                     }
@@ -779,151 +514,34 @@ define(
                             stripe.stripeJs.confirmBoletoPayment(clientSecret, confirmParams).then(onConfirm, onFail);
                         else if (methodType == "acss_debit")
                             stripe.stripeJs.confirmAcssDebitPayment(clientSecret, confirmParams).then(onConfirm, onFail);
-                        else if (methodType == "us_bank_account")
-                            stripe.stripeJs.confirmUsBankAccountPayment(clientSecret, confirmParams).then(onConfirm, onFail);
                         else
                             self.showError($t("This payment method is not supported."));
                     }
                 }
                 else
                 {
-                    var confirmParams = this.getConfirmParams();
-
                     // Confirm the payment using element
                     if (isSetup)
                     {
-                        stripe.stripeJs.confirmSetup(confirmParams).then(onConfirm, onFail);
+                        stripe.stripeJs.confirmSetup({
+                            elements: this.elements,
+                            confirmParams: {
+                                return_url: this.getStripeParam("successUrl")
+                            }
+                        })
+                        .then(onConfirm, onFail);
                     }
                     else
                     {
-                        stripe.stripeJs.confirmPayment(confirmParams).then(onConfirm, onFail);
+                        stripe.stripeJs.confirmPayment({
+                            elements: this.elements,
+                            confirmParams: {
+                                return_url: this.getStripeParam("successUrl")
+                            }
+                        })
+                        .then(onConfirm, onFail);
                     }
                 }
-            },
-
-            getConfirmParams: function()
-            {
-                var params = {
-                    elements: this.elements,
-                    confirmParams: {
-                        return_url: this.getStripeParam("successUrl")
-                    }
-                };
-
-                if (this.useQuoteBillingAddress())
-                {
-                    params.confirmParams.payment_method_data = {
-                        billing_details: {
-                            address: this.getStripeFormattedAddress(quote.billingAddress()),
-                            email: this.getBillingEmail(),
-                            name: this.getNameFromAddress(quote.billingAddress()),
-                            phone: this.getBillingPhone()
-                        }
-                    }
-                }
-
-                if (this.hasShipping())
-                {
-                    params.confirmParams.shipping = {
-                        address: this.getStripeFormattedAddress(quote.shippingAddress()),
-                        name: this.getNameFromAddress(quote.shippingAddress())
-                    }
-                }
-
-                return params;
-            },
-
-            getStripeFormattedAddress: function(address)
-            {
-                var stripeAddress = {};
-
-                stripeAddress.state = address.region ? address.region : null;
-                stripeAddress.postal_code = address.postcode ? address.postcode : null;
-                stripeAddress.country = address.countryId ? address.countryId : null;
-                stripeAddress.city = address.city ? address.city : null;
-
-                if (address.street && address.street.length > 0)
-                {
-                    stripeAddress.line1 = address.street[0];
-
-                    if (address.street.length > 1)
-                    {
-                        stripeAddress.line2 = address.street[1];
-                    }
-                    else
-                    {
-                        stripeAddress.line2 = null;
-                    }
-                }
-                else
-                {
-                    stripeAddress.line1 = null;
-                    stripeAddress.line2 = null;
-                }
-
-                return stripeAddress;
-            },
-
-            hasShipping: function()
-            {
-                return false; // Shipping has already been set on the PaymentIntent at the server side using a secret key
-
-                var address = quote.shippingAddress();
-
-                if (!address)
-                    return false;
-
-                if (!address.countryId)
-                    return false;
-
-                if (!address.street || address.street.length == 0)
-                    return false;
-
-                return true;
-            },
-
-            getBillingEmail: function()
-            {
-                if (quote.guestEmail)
-                {
-                    return quote.guestEmail;
-                }
-                else if (window.checkoutConfig.customerData && window.checkoutConfig.customerData.email)
-                {
-                    return window.checkoutConfig.customerData.email;
-                }
-
-                return null;
-            },
-
-            getNameFromAddress: function(address)
-            {
-                if (!address)
-                    return null;
-
-                var parts = [];
-                if (address.firstname)
-                    parts.push(address.firstname);
-
-                if (address.middlename)
-                    parts.push(address.middlename);
-
-                if (address.lastname)
-                    parts.push(address.lastname);
-
-                return parts.join(" ");
-            },
-
-            getBillingPhone: function()
-            {
-                var billingAddress = quote.billingAddress();
-                if (!billingAddress)
-                    return null;
-
-                if (billingAddress.telephone)
-                    return billingAddress.telephone;
-
-                return null;
             },
 
             onConfirm: function(result)
@@ -985,9 +603,10 @@ define(
             /**
              * @return {*}
              */
-            getPlaceOrderDeferredObject: function()
-            {
-                return placeOrderAction(this.getData(), this.messageContainer);
+            getPlaceOrderDeferredObject: function () {
+                return $.when(
+                    placeOrderAction(this.getData(), this.messageContainer)
+                );
             },
 
             handlePlaceOrderErrors: function (result)
@@ -995,44 +614,23 @@ define(
                 this.showError(result.responseJSON.message);
             },
 
+            showGlobalError: function(message)
+            {
+                this.isLoading(false);
+                document.getElementById('checkout').scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
+                globalMessageList.addErrorMessage({ "message": message });
+            },
+
             showError: function(message)
             {
                 this.isLoading(false);
+                document.getElementById('stripe-payments-card-errors').scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
                 this.messageContainer.addErrorMessage({ "message": message });
             },
 
             validate: function(elm)
             {
-                return this.validateCvc() && agreementValidator.validate() && additionalValidators.validate();
-            },
-
-            validateCvc: function()
-            {
-                if (!this.selection())
-                    return true;
-
-                if (this.selection().type != "card")
-                    return true;
-
-                if (this.selection().cvc != 1)
-                    return true;
-
-                if (typeof this.selection().cvcError == "undefined")
-                {
-                    this.showError($t("Please enter your card's security code."));
-                    return false;
-                }
-                else if (!this.selection().cvcError)
-                {
-                    return true;
-                }
-                else
-                {
-                    this.showError(this.selection().cvcError);
-                    return false;
-                }
-
-                return true;
+                return additionalValidators.validate();
             },
 
             getCode: function()

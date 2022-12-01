@@ -43,6 +43,7 @@ class InitialFee extends AbstractTotal
             {
                 $addressQty = $item->getQty();
                 $item = $item->getQuoteItem();
+                $item->setQty($addressQty);
             }
 
             $quoteItems[] = $item;
@@ -52,7 +53,7 @@ class InitialFee extends AbstractTotal
         if (is_numeric($rate))
         {
             $amount = $this->helper->getTotalInitialFeeFor($quoteItems, $quote, $rate);
-            $baseAmount = round(floatval($amount / $rate), 2);
+            $baseAmount = round($amount / $rate, 2);
         }
         else
         {

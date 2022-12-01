@@ -37,18 +37,11 @@ class Patch001WebhooksConfiguration
      */
     public function apply()
     {
-        $this->areaCode->setAreaCode();
+        $this->areaCode->setAreaCode("global");
         $webhooksSetup = $this->webhooksSetupFactory->create();
 
-        try
-        {
-            if ($webhooksSetup->isConfigureNeeded())
-                $webhooksSetup->configure();
-        }
-        catch (\Exception $e)
-        {
-            // The Stripe PHP library may have not been installed yet, do nothing
-        }
+        if ($webhooksSetup->isConfigureNeeded())
+            $webhooksSetup->configure();
 
         return $this;
     }

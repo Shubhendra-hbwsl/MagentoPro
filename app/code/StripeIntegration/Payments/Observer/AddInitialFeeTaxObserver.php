@@ -80,8 +80,8 @@ class AddInitialFeeTaxObserver implements ObserverInterface
         if (empty($rate))
             $rate = 1;
 
-        $baseExtraTax = round(floatval($baseExtraTax), 4);
-        $extraTax = round(floatval($baseExtraTax * $rate), 4);
+        $baseExtraTax = round($baseExtraTax, 4);
+        $extraTax = round($baseExtraTax * $rate, 4);
         $total->addTotalAmount('tax', $extraTax);
         $total->addBaseTotalAmount('tax', $baseExtraTax);
         $total->setGrandTotal($total->getGrandTotal() + $extraTax);

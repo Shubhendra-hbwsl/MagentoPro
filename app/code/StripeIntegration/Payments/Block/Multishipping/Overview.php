@@ -8,11 +8,11 @@ class Overview extends \Magento\Framework\View\Element\Template
 {
     public function __construct(
         \Magento\Framework\View\Element\Template\Context $context,
+        array $data = [],
         \StripeIntegration\Payments\Helper\Generic $helper,
         \StripeIntegration\Payments\Helper\InitParams $initParams,
         \StripeIntegration\Payments\Model\Config $config,
-        \StripeIntegration\Payments\Model\Multishipping\QuoteFactory $multishippingQuoteFactory,
-        array $data = []
+        \StripeIntegration\Payments\Model\Multishipping\QuoteFactory $multishippingQuoteFactory
     ) {
         $this->stripeCustomer = $helper->getCustomerModel();
         $this->helper = $helper;

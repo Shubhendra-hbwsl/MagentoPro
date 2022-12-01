@@ -2,11 +2,6 @@
 
 namespace StripeIntegration\Payments\Test\Integration\Frontend\CheckoutPage\RedirectFlow\AuthorizeOnly\ManualInvoicing\MixedCart;
 
-/**
- * Magento 2.3.7-p3 does not enable these at class level
- * @magentoAppIsolation enabled
- * @magentoDbIsolation enabled
- */
 class RecurringSubscriptionOrderTest extends \PHPUnit\Framework\TestCase
 {
     public function setUp(): void
@@ -44,7 +39,7 @@ class RecurringSubscriptionOrderTest extends \PHPUnit\Framework\TestCase
         $this->assertEquals("new", $order->getState());
         $this->assertEquals("pending", $order->getStatus());
         $this->assertEquals($session->amount_total / 100, round($order->getGrandTotal(), 2));
-        $this->assertEquals(0, round(floatval($order->getTotalPaid()), 2));
+        $this->assertEquals(0, round($order->getTotalPaid(), 2));
         $this->assertEquals($session->amount_total / 100, round($order->getTotalDue(), 2));
         $this->assertEquals(0, $order->getInvoiceCollection()->count());
 
@@ -82,7 +77,7 @@ class RecurringSubscriptionOrderTest extends \PHPUnit\Framework\TestCase
         $this->assertEquals($session->amount_total / 100, round($order->getGrandTotal(), 2));
         $this->assertEquals(0, $order->getTotalDue());
         $this->assertEquals($session->amount_total / 100, round($order->getTotalPaid(), 2));
-        $this->assertEquals(0, round(floatval($order->getTotalDue()), 2));
+        $this->assertEquals(0, round($order->getTotalDue(), 2));
         $this->assertEquals(1, $order->getInvoiceCollection()->count());
         $this->assertEquals("processing", $order->getState());
         $this->assertEquals("processing", $order->getStatus());

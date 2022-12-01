@@ -45,11 +45,10 @@ class WebhooksPing
 
             $processed[$secretKey] = $secretKey;
 
-            $this->config->reInitStripeFromStoreCode($configuration['code'], $configuration['mode']);
-            $stripe = $this->config->getStripeClient();
+            \Stripe\Stripe::setApiKey($secretKey);
 
             $localTime = time();
-            $product = $stripe->products->create([
+            $product = \Stripe\Product::create([
                'name' => 'Webhook Ping',
                'type' => 'service',
                'metadata' => [
@@ -114,7 +113,7 @@ class WebhooksPing
 
             foreach ($setupIntents->autoPagingIterator() as $setupIntent)
             {
-                if (in_array($setupIntent->status, ['processing', 'canceled', 'succeeded', 'requires_action']))
+                if (in_array($setupIntent->status, ['processing', 'canceled', 'succeeded']))
                     continue;
 
                 $canceled[] = $stripe->setupIntents->cancel($setupIntent->id, ['cancellation_reason' => 'abandoned']);
@@ -129,8 +128,7 @@ class WebhooksPing
         if (empty($paymentIntent->metadata->{"Order #"}))
             return false;
 
-        // requires_action is used by Vouchers, i.e. the customer needs to go pay the voucher
-        if (in_array($paymentIntent->status, ['processing', 'requires_capture', 'canceled', 'succeeded', 'requires_action']))
+        if (in_array($paymentIntent->status, ['processing', 'requires_capture', 'canceled', 'succeeded']))
             return false;
 
         return true;

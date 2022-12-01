@@ -2,11 +2,6 @@
 
 namespace StripeIntegration\Payments\Test\Integration\Frontend\CheckoutPage\CardsEmbedded\AuthorizeOnly\ManualInvoicing\Normal;
 
-/**
- * Magento 2.3.7-p3 does not enable these at class level
- * @magentoAppIsolation enabled
- * @magentoDbIsolation enabled
- */
 class PartialRefundsTest extends \PHPUnit\Framework\TestCase
 {
     public function setUp(): void
@@ -95,17 +90,7 @@ class PartialRefundsTest extends \PHPUnit\Framework\TestCase
         // Refresh the order object
         $order = $this->tests->refreshOrder($order);
 
-        if ($this->tests->magento("<", "2.4"))
-        {
-            // In Magento 2.3.7, the tax is not refunded in one of the 2 credit memos. This only happens
-            // with programmatic refunds, i.e. refunding manually from the Magento admin will refund 53.30
-            $this->assertEquals(51.65, $order->getTotalRefunded());
-        }
-        else
-        {
-            $this->assertEquals(53.30, $order->getTotalRefunded());
-        }
-
+        $this->assertEquals(53.30, $order->getTotalRefunded());
         $this->assertFalse($order->canInvoice());
         $this->assertFalse($order->canCreditmemo());
         $this->assertEquals("closed", $order->getState());

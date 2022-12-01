@@ -21,6 +21,7 @@ class Subscriptions
     public $shippingTaxPercent = null;
 
     public function __construct(
+        \StripeIntegration\Payments\Helper\Rollback $rollback,
         \StripeIntegration\Payments\Helper\Generic $paymentsHelper,
         \StripeIntegration\Payments\Helper\Compare $compare,
         \StripeIntegration\Payments\Helper\Address $addressHelper,
@@ -33,14 +34,12 @@ class Subscriptions
         \Magento\Tax\Model\Sales\Order\TaxManagement $taxManagement,
         \Magento\Sales\Model\Service\InvoiceService $invoiceService,
         \Magento\Quote\Api\CartRepositoryInterface $quoteRepository,
-        \Magento\Sales\Model\Order\CreditmemoFactory $creditmemoFactory,
-        \Magento\Sales\Model\Service\CreditmemoService $creditmemoService,
         \StripeIntegration\Payments\Model\SubscriptionFactory $subscriptionFactory,
         \Magento\SalesRule\Model\CouponFactory $couponFactory,
         \StripeIntegration\Payments\Model\CouponFactory $stripeCouponFactory,
-        \StripeIntegration\Payments\Helper\TaxHelper $taxHelper,
-        \StripeIntegration\Payments\Helper\RecurringOrderFactory $recurringOrderFactory
+        \StripeIntegration\Payments\Helper\TaxHelper $taxHelper
     ) {
+        $this->rollback = $rollback;
         $this->paymentsHelper = $paymentsHelper;
         $this->compare = $compare;
         $this->addressHelper = $addressHelper;
@@ -54,13 +53,10 @@ class Subscriptions
         $this->taxManagement = $taxManagement;
         $this->invoiceService = $invoiceService;
         $this->quoteRepository = $quoteRepository;
-        $this->creditmemoFactory = $creditmemoFactory;
-        $this->creditmemoService = $creditmemoService;
         $this->subscriptionFactory = $subscriptionFactory;
         $this->couponFactory = $couponFactory;
         $this->stripeCouponFactory = $stripeCouponFactory;
         $this->taxHelper = $taxHelper;
-        $this->recurringOrderFactory = $recurringOrderFactory;
     }
 
     public function getSubscriptionExpandParams()
@@ -205,9 +201,7 @@ class Subscriptions
                 $hasRegularItems = true;
 
                 if ($this->compare->isDifferent($invoiceLineItem, $oneTimeAmount))
-                {
                     throw new CacheInvalidationException("Non-updateable subscription details have changed: One time payment amount has changed.");
-                }
             }
 
             if (!$hasRegularItems && $oneTimeAmount !== "unset")
@@ -234,7 +228,7 @@ class Subscriptions
         $params = $this->getSubscriptionParamsFromQuote($quote, $paymentIntentParams);
 
         if (empty($params))
-            return null; // The cart may not include subscriptions
+            return null;
 
         if (!$subscriptionId)
             return $this->config->getStripeClient()->subscriptions->create($params);
@@ -248,6 +242,9 @@ class Subscriptions
         catch (\Exception $e)
         {
             $this->paymentsHelper->logError("Could not retrieve subscription $subscriptionId: " . $e->getMessage(), $e->getTraceAsString());
+
+            if (empty($params))
+                return null;
 
             return $this->config->getStripeClient()->subscriptions->create($params);
         }
@@ -266,6 +263,9 @@ class Subscriptions
             {
 
             }
+
+            if (empty($params))
+                return null;
 
             return $this->config->getStripeClient()->subscriptions->create($params);
         }
@@ -366,14 +366,9 @@ class Subscriptions
     }
 
     /**
-     * Returns array [
-     *   [
-     *     \Magento\Catalog\Model\Product,
-     *     \Magento\Sales\Model\Quote\Item,
-     *     array $profile
-     *   ],
-     *   ...
-     * ]
+     * Description
+     * @param \Magento\Sales\Model\Order $order
+     * @return array<\Magento\Catalog\Model\Product,\Magento\Sales\Model\Quote\Item,array profile>
      */
     public function getSubscriptionsFromQuote($quote)
     {
@@ -400,14 +395,9 @@ class Subscriptions
     }
 
     /**
-     * Returns array [
-     *   [
-     *     \Magento\Catalog\Model\Product,
-     *     \Magento\Sales\Model\Order\Item,
-     *     array $profile
-     *   ],
-     *   ...
-     * ]
+     * Description
+     * @param \Magento\Sales\Model\Order $order
+     * @return array<\Magento\Catalog\Model\Product,\Magento\Sales\Model\Order\Item,array profile>
      */
     public function getSubscriptionsFromOrder($order)
     {
@@ -566,20 +556,15 @@ class Subscriptions
 
         // This seems to be a Magento multi-currency bug, tested in v2.3.2
         if (is_numeric($rate) && $rate > 0 && $rate != 1 && $item->getPrice() == $item->getBasePrice())
-            $amount = round(floatval($amount * $rate), 2); // We fix it by doing the calculation ourselves
+            $amount = round($amount * $rate, 2); // We fix it by doing the calculation ourselves
 
         if (is_numeric($rate) && $rate > 0)
-            $initialFee = round(floatval($initialFee * $rate), 2);
+            $initialFee = round($initialFee * $rate, 2);
 
         if ($this->isOrder($order))
         {
             $quote = $this->paymentsHelper->getQuoteFromOrder($order);
             $quoteItem = null;
-            if (!$quote->getId())
-            {
-                $quote = $this->createQuoteFromOrder($order);
-            }
-
             foreach ($quote->getAllItems() as $qItem)
             {
                 if ($qItem->getSku() == $item->getSku())
@@ -595,13 +580,9 @@ class Subscriptions
             }
 
             if ($item->getShippingAmount())
-            {
                 $shipping = $item->getShippingAmount();
-            }
             else if ($item->getBaseShippingAmount())
-            {
                 $shipping = $this->paymentsHelper->convertBaseAmountToStoreAmount($item->getBaseShippingAmount());
-            }
             else
             {
                 $baseShipping = $this->taxHelper->getBaseShippingAmountForQuoteItem($quoteItem, $quote);
@@ -679,8 +660,8 @@ class Subscriptions
             'discount_amount_magento' => $discount,
             'base_discount_amount_magento' => $baseDiscount,
             'discount_amount_stripe' => $this->paymentsHelper->convertMagentoAmountToStripeAmount($discount, $currency),
-            'shipping_magento' => round(floatval($shipping), 2),
-            'base_shipping_magento' => round(floatval($baseShipping), 2),
+            'shipping_magento' => round($shipping, 2),
+            'base_shipping_magento' => round($baseShipping, 2),
             'shipping_stripe' => $this->paymentsHelper->convertMagentoAmountToStripeAmount($shipping, $currency),
             'currency' => strtolower($currency),
             'base_currency' => strtolower($baseCurrency),
@@ -731,6 +712,8 @@ class Subscriptions
             return null;
 
         $appliedRuleIds = explode(",", $appliedRuleIds);
+        if (empty($appliedRuleIds))
+            return null;
 
         $foundCoupons = [];
         foreach ($appliedRuleIds as $ruleId)
@@ -843,7 +826,7 @@ class Subscriptions
         if (!$this->config->priceIncludesTax())
             $subscriptionTotal += $profile['tax_amount_item']; // Includes qty calculation
 
-        return round(floatval($subscriptionTotal), 2);
+        return round($subscriptionTotal, 2);
     }
 
     // We increase the subscription price by the amount of the discount, so that we can apply
@@ -1299,133 +1282,5 @@ class Subscriptions
         }
 
         return true;
-    }
-
-    public function getTrialSubscriptionsFrom($items)
-    {
-        $results = [];
-
-        if (!$this->paymentsHelper->isSubscriptionsEnabled())
-            return $results;
-
-        foreach ($items as $item)
-        {
-            $product = $this->paymentsHelper->getSubscriptionProductFromOrderItem($item);
-            if (!$product)
-                continue;
-
-            $trial = $product->getStripeSubTrial();
-            if (is_numeric($trial) && $trial > 0)
-            {
-                $results[] = [
-                    'order_item' => $item,
-                    'product' => $product
-                ];
-            }
-        }
-
-        return $results;
-    }
-
-    public function refundTrialSubscriptionItemsForOrder($order)
-    {
-        try
-        {
-            if (!$order->canCreditmemo())
-                return;
-
-            $trialSubscriptions = $this->getTrialSubscriptionsFrom($order->getAllItems());
-            if (empty($trialSubscriptions))
-                return;
-
-            // We expect 1 paid invoice
-            $orderInvoices = $order->getInvoiceCollection();
-            if ($orderInvoices->getSize() != 1)
-                return;
-
-            // We expect no previous credit memos
-            $orderCreditmemos = $order->getCreditmemosCollection();
-            if ($orderCreditmemos->getSize() != 0)
-                return;
-
-            $invoice = $orderInvoices->getFirstItem();
-            if ($invoice->getState() != \Magento\Sales\Model\Order\Invoice::STATE_PAID)
-                return;
-
-            $qtys = [];
-            $baseShippingAmount = 0;
-
-            foreach ($trialSubscriptions as $trialSubscription)
-            {
-                $orderItem = $trialSubscription['order_item'];
-                $product = $trialSubscription['product'];
-
-                if ($orderItem->getParentItem() || $orderItem->getParentItemId())
-                    continue;
-
-                $sku = $orderItem->getSku();
-                $qtys[$orderItem->getId()] = [$sku => $orderItem->getQtyInvoiced()];
-
-                $profile = $this->getSubscriptionDetails($product, $order, $orderItem);
-                $baseShippingAmount += $profile['base_shipping_magento'];
-            }
-
-            if (empty($qtys))
-                return;
-
-            $params = [
-                "qtys" => $qtys,
-                "shipping_amount" => $baseShippingAmount,
-                "adjustment_positive" => 0,
-                "adjustment_negative" => 0,
-                "send_email" => 1,
-                "comment_text" => __("No charge collected for trial subscription items."),
-                "comment_customer_notify" => 1
-            ];
-
-            $creditmemo = $this->creditmemoFactory->createByInvoice($invoice, $params);
-
-            // Create the credit memo
-            $creditmemo = $this->creditmemoService->refund($creditmemo, true);
-
-            $this->paymentsHelper->sendCreditMemoEmail($creditmemo->getId());
-
-            return $creditmemo;
-        }
-        catch (\Exception $e)
-        {
-            $this->paymentsHelper->logError("Could not refund trial subscription items: " . $e->getMessage(), $e->getTraceAsString());
-            return null;
-        }
-    }
-
-    public function createQuoteFromOrder($originalOrder)
-    {
-        $recurringOrder = $this->recurringOrderFactory->create();
-        $quote = $recurringOrder->createQuoteFrom($originalOrder);
-        $recurringOrder->setQuoteCustomerFrom($originalOrder, $quote);
-        $recurringOrder->setQuoteAddressesFrom($originalOrder, $quote);
-
-        $invoiceDetails = [
-            'products' => []
-        ];
-
-        foreach ($originalOrder->getAllItems() as $orderItem)
-        {
-            $invoiceDetails['products'][$orderItem->getProductId()] = [
-                'amount' => $orderItem->getPrice(),
-                'base_amount' => $orderItem->getBasePrice(),
-                'qty' => $orderItem->getQtyOrdered()
-            ];
-        }
-
-        $recurringOrder->setQuoteItemsFrom($originalOrder, $invoiceDetails, $quote);
-        $recurringOrder->setQuoteShippingMethodFrom($originalOrder, $quote);
-        $recurringOrder->setQuoteDiscountFrom($originalOrder, $quote);
-        $recurringOrder->setQuotePaymentMethodFrom($originalOrder, $quote);
-
-        // Collect Totals & Save Quote
-        $quote->setTotalsCollectedFlag(false)->collectTotals();
-        return $quote;
     }
 }

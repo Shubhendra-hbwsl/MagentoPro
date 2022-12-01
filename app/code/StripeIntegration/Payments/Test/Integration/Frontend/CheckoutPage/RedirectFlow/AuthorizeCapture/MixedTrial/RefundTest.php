@@ -2,11 +2,6 @@
 
 namespace StripeIntegration\Payments\Test\Integration\Frontend\CheckoutPage\RedirectFlow\AuthorizeCapture\MixedTrial;
 
-/**
- * Magento 2.3.7-p3 does not enable these at class level
- * @magentoAppIsolation enabled
- * @magentoDbIsolation enabled
- */
 class RefundTest extends \PHPUnit\Framework\TestCase
 {
     public function setUp(): void
@@ -37,29 +32,20 @@ class RefundTest extends \PHPUnit\Framework\TestCase
         $orderIncrementId = $order->getIncrementId();
 
         // Confirm the payment
-        $paymentIntent = $this->tests->confirmCheckoutSession($order, "MixedTrial", "card", "NewYork");
-        $customerId = $paymentIntent->customer;
+        $method = "card";
+        $session = $this->tests->checkout()->retrieveSession($order, "MixedTrial");
+        $response = $this->tests->checkout()->confirm($session, $order, $method, "NewYork");
+        $this->tests->checkout()->authenticate($response->payment_intent, $method);
+        $paymentIntent = $this->tests->stripe()->paymentIntents->retrieve($response->payment_intent->id);
 
-        // Refresh the order
-        $order = $this->tests->refreshOrder($order);
-        $this->assertFalse($order->canCancel());
-        $this->assertTrue($order->canCreditmemo()); // Because Simple Product was paid
-
-        // Invoice checks
-        $invoicesCollection = $order->getInvoiceCollection();
-        $this->assertEquals(1, $invoicesCollection->count());
-        $invoice = $invoicesCollection->getFirstItem();
-        $this->assertEquals(\Magento\Sales\Model\Order\Invoice::STATE_PAID, $invoice->getState());
-        $this->assertFalse($invoice->canCancel());
-        $this->assertTrue($invoice->canRefund());
-        $this->assertFalse($invoice->canCapture()); // Offline capture should be possible
-
+        // Trigger webhooks charge.succeeded & payment_intent.succeeded & invoice.payment_succeeded
+        $customerId = $session->customer;
         $customer = $this->tests->stripe()->customers->retrieve($customerId);
-        $simpleProductInvoice = $customer->subscriptions->data[0]->latest_invoice;
+        $subscription = $customer->subscriptions->data[0];
+        $this->tests->event()->triggerSubscriptionEvents($subscription, $this);
 
         // Activate the subscription
         $ordersCount = $this->tests->getOrdersCount();
-        $customer = $this->tests->stripe()->customers->retrieve($paymentIntent->customer);
         $this->tests->endTrialSubscription($customer->subscriptions->data[0]->id);
         $newOrdersCount = $this->tests->getOrdersCount();
         $this->assertEquals($ordersCount + 1, $newOrdersCount);
@@ -67,36 +53,32 @@ class RefundTest extends \PHPUnit\Framework\TestCase
         // Refund the order
         $order = $this->tests->refreshOrder($order);
         $invoices = $order->getInvoiceCollection();
-        $this->assertEquals(1, $invoices->getSize());
-        $invoice = $invoices->getFirstItem();
-        $skus = [];
-        $this->assertStringContainsString("pi_", $invoice->getTransactionId());
+        foreach ($invoices as $invoice)
+        {
+            $skus = [];
+            $this->assertStringContainsString("pi_", $invoice->getTransactionId());
 
-        $skus['simple-product'] = ['simple-product' => 1];
-        $this->tests->refundOnline($invoice, $skus, 5);
+            $baseShippingAmount = null;
+            foreach ($invoice->getAllItems() as $invoiceItem)
+            {
+                $skus = [$invoiceItem->getSku() => $invoiceItem->getQty()];
+
+                if ($invoiceItem->getSku() == "simple-product")
+                    $baseShippingAmount = 5;
+            }
+
+            $this->tests->refundOnline($invoice, $skus, $baseShippingAmount);
+        }
 
         // Stripe checks
-        $simpleProductInvoice = $this->tests->stripe()->invoices->retrieve($simpleProductInvoice, ['expand' => ['payment_intent']]);
-        $this->tests->compare($simpleProductInvoice, [
+        $customer = $this->tests->stripe()->customers->retrieve($customerId);
+        $invoice = $this->tests->stripe()->invoices->retrieve($customer->subscriptions->data[0]->latest_invoice, ['expand' => ['payment_intent']]);
+        $this->tests->compare($invoice, [
             "payment_intent" => [
                 "charges" => [
                     "data" => [
                         0 => [
                             "amount_refunded" => 1346
-                        ]
-                    ]
-                ]
-            ]
-        ]);
-
-        $customer = $this->tests->stripe()->customers->retrieve($customer->id);
-        $trialSubscriptionInvoice = $this->tests->stripe()->invoices->retrieve($customer->subscriptions->data[0]->latest_invoice, ['expand' => ['payment_intent']]);
-        $this->tests->compare($trialSubscriptionInvoice, [
-            "payment_intent" => [
-                "charges" => [
-                    "data" => [
-                        0 => [
-                            "amount_refunded" => 0
                         ]
                     ]
                 ]

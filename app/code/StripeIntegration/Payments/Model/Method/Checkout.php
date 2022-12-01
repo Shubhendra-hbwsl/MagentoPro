@@ -56,7 +56,6 @@ class Checkout extends \Magento\Payment\Model\Method\AbstractMethod
         \StripeIntegration\Payments\Helper\Subscriptions $subscriptions,
         \StripeIntegration\Payments\Helper\Locale $localeHelper,
         \StripeIntegration\Payments\Helper\CheckoutSession $checkoutSessionHelper,
-        \StripeIntegration\Payments\Helper\Refunds $refundsHelper,
         \Magento\Payment\Model\Method\Logger $logger,
         \Magento\Checkout\Helper\Data $checkoutHelper,
         \Magento\Framework\Model\ResourceModel\AbstractResource $resource = null,
@@ -95,7 +94,6 @@ class Checkout extends \Magento\Payment\Model\Method\AbstractMethod
         $this->subscriptions = $subscriptions;
         $this->localeHelper = $localeHelper;
         $this->checkoutSessionHelper = $checkoutSessionHelper;
-        $this->refundsHelper = $refundsHelper;
     }
 
     public function adjustParamsForMethod(&$params, $payment, $order, $quote)
@@ -235,9 +233,29 @@ class Checkout extends \Magento\Payment\Model\Method\AbstractMethod
 
     public function cancel(\Magento\Payment\Model\InfoInterface $payment, $amount = null)
     {
+        $method = $payment->getMethod();
+
+        // Captured
+        $creditmemo = $payment->getCreditmemo();
+        if (!empty($creditmemo))
+        {
+            $rate = $creditmemo->getBaseToOrderRate();
+            if (!empty($rate) && is_numeric($rate) && $rate > 0)
+            {
+                $amount = round($amount * $rate, 2);
+                $diff = $amount - $payment->getAmountPaid();
+                if ($diff > 0 && $diff <= 1) // Solves a currency conversion rounding issue (Magento rounds .5 down)
+                    $amount = $payment->getAmountPaid();
+            }
+        }
+
+        // Authorized
+        $amount = (empty($amount)) ? $payment->getOrder()->getTotalDue() : $amount;
+        $currency = $payment->getOrder()->getOrderCurrencyCode();
+
         try
         {
-            $this->refundsHelper->refund($payment, $amount);
+            $this->helper->refundPaymentIntent($payment, $amount, $currency);
         }
         catch (\Exception $e)
         {
@@ -250,10 +268,5 @@ class Checkout extends \Magento\Payment\Model\Method\AbstractMethod
     public function getConfigPaymentAction()
     {
         return $this->config->getConfigData('payment_action');
-    }
-
-    public function canEdit()
-    {
-        return false;
     }
 }

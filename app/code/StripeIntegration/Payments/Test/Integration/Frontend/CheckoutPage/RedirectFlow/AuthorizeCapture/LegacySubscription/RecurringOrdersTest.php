@@ -2,11 +2,6 @@
 
 namespace StripeIntegration\Payments\Test\Integration\Frontend\RedirectFlow\AuthorizeCapture\LegacySubscription;
 
-/**
- * Magento 2.3.7-p3 does not enable these at class level
- * @magentoAppIsolation enabled
- * @magentoDbIsolation enabled
- */
 class RecurringOrdersTest extends \PHPUnit\Framework\TestCase
 {
     public function setUp(): void
@@ -50,25 +45,13 @@ class RecurringOrdersTest extends \PHPUnit\Framework\TestCase
         // Now lets create a subscription using the legacy method and associate it with $order
 
         $taxPercent = "8.25";
-        $productTaxRate = null;
-        $rates = $this->tests->stripe()->taxRates->all(['limit' => 00]);
-        foreach ($rates->autoPagingIterator() as $rate)
-        {
-            if ($rate->percentage == $taxPercent && !$rate->inclusive)
-            {
-                $productTaxRate = $rate;
-                break;
-            }
-        }
-        if (!$productTaxRate)
-        {
-            $productTaxRate = $this->tests->stripe()->taxRates->create([
-                "display_name" => "VAT",
-                "description" => $taxPercent . "% VAT",
-                "percentage" => $taxPercent,
-                "inclusive" => "false"
-            ]);
-        }
+
+        $productTaxRate = $this->tests->stripe()->taxRates->create([
+            "display_name" => "VAT",
+            "description" => $taxPercent . "% VAT",
+            "percentage" => $taxPercent,
+            "inclusive" => "false"
+        ]);
 
         $customer = $this->tests->stripe()->customers->create([
             "name" => "Joyce Strother",

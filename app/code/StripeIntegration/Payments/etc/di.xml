@@ -177,6 +177,14 @@
         </arguments>
     </type>
 
+    <type name="StripeIntegration\Payments\Controller\Webhooks">
+        <arguments>
+            <argument name="helper" xsi:type="object">StripeIntegration\Payments\Helper\Generic</argument>
+            <argument name="invoiceService" xsi:type="object">Magento\Sales\Model\Service\InvoiceService</argument>
+            <argument name="dbTransaction" xsi:type="object">Magento\Framework\DB\Transaction</argument>
+        </arguments>
+    </type>
+
     <type name="StripeIntegration\Payments\Block\Customer\Cards">
         <arguments>
             <argument name="helper" xsi:type="object">StripeIntegration\Payments\Helper\Generic</argument>
@@ -213,12 +221,7 @@
                 <item name="MigrateProductsConfiguration" xsi:type="object">StripeIntegration\Payments\Setup\Migrate\ProductConfigurationCommand</item>
                 <item name="MigrateStripeSubscriptions" xsi:type="object">StripeIntegration\Payments\Setup\Migrate\StripeSubscriptionsCommand</item>
                 <item name="MigrateSubscriptionPrice" xsi:type="object">StripeIntegration\Payments\Setup\Migrate\SubscriptionPriceCommand</item>
-                <item name="WebhooksCleanup" xsi:type="object">StripeIntegration\Payments\Setup\Webhooks\CleanupCommand</item>
-                <item name="WebhooksConfigure" xsi:type="object">StripeIntegration\Payments\Setup\Webhooks\ConfigureCommand</item>
-                <item name="WebhooksOriginCheck" xsi:type="object">StripeIntegration\Payments\Setup\Webhooks\OriginCheckCommand</item>
-                <item name="WebhooksProcessEvent" xsi:type="object">StripeIntegration\Payments\Setup\Webhooks\ProcessEventCommand</item>
-                <item name="WebhooksProcessEventsRange" xsi:type="object">StripeIntegration\Payments\Setup\Webhooks\ProcessEventsRangeCommand</item>
-                <item name="WebhooksProcessEventsDateRange" xsi:type="object">StripeIntegration\Payments\Setup\Webhooks\ProcessEventsDateRangeCommand</item>
+                <item name="WebhookPingCleanup" xsi:type="object">StripeIntegration\Payments\Setup\Jobs\WebhookPingCleanupCommand</item>
             </argument>
         </arguments>
     </type>
@@ -238,7 +241,6 @@
     </type>
     <type name="Magento\Sales\Model\Order">
         <plugin name="setInitialFeeExtensionAfterLoad" type="StripeIntegration\Payments\Plugin\Order\LoadInitialFee" sortOrder="30"/>
-        <plugin name="stripe_magento_sales_model_order" type="StripeIntegration\Payments\Plugin\Sales\Model\Order" sortOrder="30"/>
     </type>
     <type name="Magento\Sales\Model\OrderRepository">
         <plugin name="getInitialFeeExtensionBeforeSave" type="StripeIntegration\Payments\Plugin\Order\SaveInitialFee" sortOrder="30"/>

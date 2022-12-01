@@ -153,27 +153,11 @@ class Event
         else
             $invoiceId = $subscription->latest_invoice;
 
-        $wait = 3;
-        do
-        {
-            try
-            {
-                return $this->stripeConfig->getStripeClient()->invoices->retrieve($invoiceId, ['expand' => ['charge']]);
-            }
-            catch (\Stripe\Exception\ApiErrorException $e)
-            {
-                // $e is: This object cannot be accessed right now because another API request or Stripe process is currently accessing it.
-                $wait--;
-                if ($wait < 0)
-                    throw $e;
-            }
-        }
-        while ($wait > 0);
+        return $this->stripeConfig->getStripeClient()->invoices->retrieve($invoiceId, ['expand' => ['charge']]);
     }
 
     public function triggerSubscriptionEvents($subscription)
     {
-        $this->tests->assertNotEmpty($subscription, 'The subscription was not created');
         $this->tests->assertNotEmpty($subscription->latest_invoice);
 
         $invoice = $this->getInvoiceFromSubscription($subscription);
@@ -186,14 +170,6 @@ class Event
             $this->triggerPaymentIntentEvents($invoice->payment_intent);
 
         $this->triggerEvent('invoice.payment_succeeded', $invoice);
-
-        $wait = 6;
-        while (empty($subscription->default_payment_method) && $wait > 0)
-        {
-            sleep(1);
-            $subscription = $this->stripeConfig->getStripeClient()->subscriptions->retrieve($subscription->id);
-            $wait--;
-        }
     }
 
     public function triggerPaymentIntentEvents($paymentIntent, $test = null)

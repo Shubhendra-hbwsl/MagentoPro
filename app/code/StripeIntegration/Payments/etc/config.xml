@@ -15,6 +15,7 @@
                 <radar_risk_level>10</radar_risk_level>
                 <currency>USD</currency>
                 <sort_order>1</sort_order>
+                <moto_exemptions>0</moto_exemptions>
                 <card_autodetect>2</card_autodetect>
                 <cctypes>visa,mastercard,amex,jcb,discover,diners,cartes_bancaires</cctypes>
                 <save_payment_method>0</save_payment_method>
@@ -22,7 +23,6 @@
                 <level3_data>0</level3_data>
                 <payment_flow>0</payment_flow>
                 <webhook_origin_check>1</webhook_origin_check>
-                <cvc_code>new_cards</cvc_code>
 
                 <!-- What can we do? -->
                 <is_gateway>1</is_gateway>
@@ -69,8 +69,7 @@
             <stripe_payments_express>
                 <model>StripeExpressFacade</model>
                 <title>Wallet payment via Stripe</title>
-                <global_enabled>1</global_enabled>
-                <enabled>product_page,minicart,shopping_cart_page,checkout_page</enabled>
+                <enabled>product_page,minicart,shopping_cart_page</enabled>
                 <button_type>default</button_type>
                 <button_theme>dark</button_theme>
                 <button_height>50</button_height>

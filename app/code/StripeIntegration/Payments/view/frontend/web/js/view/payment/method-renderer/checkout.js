@@ -160,15 +160,15 @@ define(
                     {
                         icons.push({
                             "code": method,
-                            "path": window.checkoutConfig.payment["stripe_payments"].pmIcons[method].icon,
-                            "name": window.checkoutConfig.payment["stripe_payments"].pmIcons[method].name
+                            "path": window.checkoutConfig.payment["stripe_payments"].pmIcons[method],
+                            "name": self.methodName(method)
                         });
                     }
                     else if (method != "card")
                     {
                         icons.push({
                             "code": method,
-                            "path": window.checkoutConfig.payment["stripe_payments"].pmIcons["bank"].icon,
+                            "path": window.checkoutConfig.payment["stripe_payments"].pmIcons["bank"],
                             "name": self.methodName(method)
                         });
                     }
@@ -260,7 +260,41 @@ define(
                 if (typeof code == 'undefined')
                     return '';
 
-                return code.charAt(0).toUpperCase() + Array.from(code).splice(1).join('')
+                switch (code)
+                {
+                    case 'visa': return "Visa";
+                    case 'amex': return "American Express";
+                    case 'mastercard': return "MasterCard";
+                    case 'discover': return "Discover";
+                    case 'diners': return "Diners Club";
+                    case 'jcb': return "JCB";
+                    case 'unionpay': return "UnionPay";
+                    case 'cartes_bancaires': return "Cartes Bancaires";
+                    case 'bacs_debit': return "BACS Direct Debit";
+                    case 'au_becs_debit': return "BECS Direct Debit";
+                    case 'boleto': return "Boleto";
+                    case 'acss_debit': return "ACSS Direct Debit / Canadian PADs";
+                    case 'ach_debit': return "ACH Direct Debit";
+                    case 'oxxo': return "OXXO";
+                    case 'klarna': return "Klarna";
+                    case 'sepa': return "SEPA Direct Debit";
+                    case 'sepa_debit': return "SEPA Direct Debit";
+                    case 'sepa_credit': return "SEPA Credit Transfer";
+                    case 'sofort': return "SOFORT";
+                    case 'ideal': return "iDEAL";
+                    case 'paypal': return "PayPal";
+                    case 'wechat': return "WeChat Pay";
+                    case 'alipay': return "Alipay";
+                    case 'grabpay': return "GrabPay";
+                    case 'afterpay_clearpay': return "Afterpay / Clearpay";
+                    case 'multibanco': return "Multibanco";
+                    case 'p24': return "P24";
+                    case 'giropay': return "Giropay";
+                    case 'eps': return "EPS";
+                    case 'bancontact': return "Bancontact";
+                    default:
+                        return code.charAt(0).toUpperCase() + Array.from(code).splice(1).join('')
+                }
             },
 
             showError: function(message)

@@ -15,6 +15,7 @@ class PredispatchObserver implements ObserverInterface
     }
 
     /**
+     * @param Observer $observer
      * @return void
      */
     public function execute(\Magento\Framework\Event\Observer $observer)

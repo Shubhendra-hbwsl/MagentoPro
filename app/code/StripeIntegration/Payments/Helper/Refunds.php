@@ -94,7 +94,7 @@ class Refunds
         else if ($currency == $baseCurrency)
         {
             $rate = ($order->getBaseToOrderRate() ? $order->getBaseToOrderRate() : 1);
-            $order->setTotalRefunded($order->getTotalRefunded() + round(floatval($refunded * $rate), 2));
+            $order->setTotalRefunded($order->getTotalRefunded() + round($refunded * $rate, 2));
             $order->setBaseTotalRefunded($order->getBaseTotalRefunded() + $refunded);
         }
         else
@@ -125,24 +125,15 @@ class Refunds
             $transactionId = $payment->getLastTransId();
         }
 
-        if (strpos($transactionId, "pi_") === false)
+        if (empty($transactionId))
         {
-            if ($this->helper->isAdmin())
-            {
-                throw new LocalizedException(__("The payment can only be refunded via the Stripe Dashboard. You can retry in offline mode instead."));
-            }
-            else
-            {
-                if ($this->isCancelation($payment))
-                {
-                    throw new RefundOfflineException(__("Canceling order offline."));
-                }
-                else
-                {
-                    throw new RefundOfflineException(__("Refunding order offline."));
-                }
-            }
+            // Case where an invoice is in Pending status, with no transaction ID, receiving a source.failed event which cancels the invoice.
+            $msg = __("Cannot perform this action online because the order or invoice has no transaction ID. You can retry in offline mode instead.");
+            throw new RefundOfflineException($msg);
         }
+
+        if (strpos($transactionId, "pi_") === false)
+            throw new LocalizedException(__("This order was placed with a deprecated payment method. Please refund the order via the Stripe Dashboard."));
 
         return $this->helper->cleanToken($transactionId);
     }
@@ -206,26 +197,7 @@ class Refunds
             $humanReadable1 = $this->helper->getFormattedStripeAmount($requestedAmount, $currency, $order);
             $humanReadable2 = $this->helper->getFormattedStripeAmount($refundableAmount, $currency, $order);
             if ($refundableAmount == 0)
-            {
-                if ($this->helper->isAdmin())
-                {
-                    throw new LocalizedException(__("Requested a refund of %1, but the most amount that can be refunded online is %2. You can retry refunding offline instead.", $humanReadable1, $humanReadable2));
-                }
-                else
-                {
-                    // We may get here in cases of abandoned carts. The cron job will attempt to cancel the order.
-                    if ($this->isCancelation($payment))
-                    {
-                        $msg = __("Canceling order offline.");
-                    }
-                    else
-                    {
-                        $msg = __("Requested an online refund of %1, but the most amount that can be refunded online is %2. Refunding offline instead.", $humanReadable1, $humanReadable2);
-                    }
-                    $this->helper->addOrderComment($msg, $order);
-                    return $this;
-                }
-            }
+                throw new LocalizedException(__("Requested a refund of %1, but the most amount that can be refunded online is %2. You can retry refunding offline instead.", $humanReadable1, $humanReadable2));
             else
                 throw new LocalizedException(__("Requested a refund of %1, but the most amount that can be refunded online is %2.", $humanReadable1, $humanReadable2));
         }
@@ -290,7 +262,7 @@ class Refunds
             }
 
             // Fully cancel the payment intent
-            $this->config->getStripeClient()->paymentIntents->cancel($paymentIntent->id, []);
+            $paymentIntent->cancel();
         }
 
         if (!$this->checkIfWeCanRefundMore($refundedAmount, $canceledAmount, $remainingAmount, $requestedAmount, $order, $currency))

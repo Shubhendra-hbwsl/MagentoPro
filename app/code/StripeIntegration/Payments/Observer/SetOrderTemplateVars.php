@@ -15,6 +15,7 @@ class SetOrderTemplateVars implements ObserverInterface
         \StripeIntegration\Payments\Helper\Generic $paymentsHelper,
         \StripeIntegration\Payments\Model\Config $config,
         \Magento\Sales\Model\Service\InvoiceService $invoiceService,
+        \Magento\Framework\DB\Transaction $dbTransaction,
         \Magento\Framework\Event\ManagerInterface $eventManager,
         \StripeIntegration\Payments\Helper\Serializer $serializer
     )
@@ -25,10 +26,12 @@ class SetOrderTemplateVars implements ObserverInterface
         $this->_stripeCustomer = $paymentsHelper->getCustomerModel();
         $this->_eventManager = $eventManager;
         $this->invoiceService = $invoiceService;
+        $this->dbTransaction = $dbTransaction;
         $this->serializer = $serializer;
     }
 
     /**
+     * @param Observer $observer
      * @return void
      */
     public function execute(\Magento\Framework\Event\Observer $observer)
@@ -48,9 +51,9 @@ class SetOrderTemplateVars implements ObserverInterface
         if (!$this->config->isSubscriptionsEnabled())
             return $this;
 
-        if (!empty($this->paymentsHelper->orderComments[$order->getIncrementId()]))
+        $comment = $this->paymentsHelper->orderComments[$order->getIncrementId()];
+        if (!empty($comment))
         {
-            $comment = $this->paymentsHelper->orderComments[$order->getIncrementId()];
             $orderData = $data->getOrderData();
             $orderData['email_customer_note'] = $comment;
             $data["order_data"] = $orderData;

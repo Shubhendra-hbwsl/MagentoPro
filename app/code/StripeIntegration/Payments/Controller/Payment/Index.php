@@ -33,6 +33,11 @@ class Index extends \Magento\Framework\App\Action\Action
     protected $invoiceService;
 
     /**
+     * @var \Magento\Framework\DB\Transaction
+     */
+    protected $dbTransaction;
+
+    /**
      * Payment constructor.
      *
      * @param \Magento\Framework\App\Action\Context       $context
@@ -41,6 +46,7 @@ class Index extends \Magento\Framework\App\Action\Action
      * @param \Magento\Sales\Model\OrderFactory           $orderFactory
      * @param \StripeIntegration\Payments\Helper\Generic    $helper
      * @param \Magento\Sales\Model\Service\InvoiceService $invoiceService
+     * @param \Magento\Framework\DB\Transaction           $dbTransaction
      */
     public function __construct(
         \Magento\Framework\App\Action\Context $context,
@@ -52,8 +58,8 @@ class Index extends \Magento\Framework\App\Action\Action
         \StripeIntegration\Payments\Model\CheckoutSessionFactory $checkoutSessionFactory,
         \StripeIntegration\Payments\Model\Config $config,
         \StripeIntegration\Payments\Model\PaymentElement $paymentElement,
-        \StripeIntegration\Payments\Model\PaymentIntent $paymentIntentModel,
-        \Magento\Sales\Model\Service\InvoiceService $invoiceService
+        \Magento\Sales\Model\Service\InvoiceService $invoiceService,
+        \Magento\Framework\DB\Transaction $dbTransaction
     )
     {
         $this->resultPageFactory = $resultPageFactory;
@@ -67,9 +73,9 @@ class Index extends \Magento\Framework\App\Action\Action
         $this->checkoutSessionFactory = $checkoutSessionFactory;
         $this->config = $config;
         $this->paymentElement = $paymentElement;
-        $this->paymentIntentModel = $paymentIntentModel;
 
         $this->invoiceService = $invoiceService;
+        $this->dbTransaction = $dbTransaction;
     }
 
     public function execute()
@@ -107,8 +113,6 @@ class Index extends \Magento\Framework\App\Action\Action
         if (empty($paymentIntentId))
             return $this->success();
 
-        $paymentIntent = $this->config->getStripeClient()->paymentIntents->retrieve($paymentIntentId, []);
-
         $this->paymentElement->load($paymentIntentId, 'payment_intent_id');
         $orderIncrementId = $this->paymentElement->getOrderIncrementId();
 
@@ -120,14 +124,12 @@ class Index extends \Magento\Framework\App\Action\Action
         if (!$order->getId())
             return $this->error(__("Your order #%1 could not be placed. Please contact us for assistance.", $orderIncrementId));
 
-        if ($this->paymentIntentModel->isSuccessfulStatus($paymentIntent) || $paymentIntent->status == 'processing')
-        {
-            return $this->success($order);
-        }
-        else
-        {
+        $redirectStatus = $this->getRequest()->getParam('redirect_status');
+
+        if ($redirectStatus == "failed")
             return $this->error(__('Payment failed. Please try placing the order again.'), $order);
-        }
+
+        return $this->success($order);
     }
 
     private function returnFromStripeCheckout()
@@ -206,6 +208,8 @@ class Index extends \Magento\Framework\App\Action\Action
 
         if (!$this->session->getLastRealOrderId() && $order)
             $this->session->setLastRealOrderId($order->getIncrementId());
+
+        $this->helper->sendNewOrderEmailFor($order);
 
         return $this->_redirect('checkout/onepage/success');
     }

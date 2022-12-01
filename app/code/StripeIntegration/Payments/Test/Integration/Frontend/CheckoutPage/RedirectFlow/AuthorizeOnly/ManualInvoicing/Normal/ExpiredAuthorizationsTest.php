@@ -2,11 +2,6 @@
 
 namespace StripeIntegration\Payments\Test\Integration\Frontend\RedirectFlow\AuthorizeOnly\ManualInvoicing\Normal;
 
-/**
- * Magento 2.3.7-p3 does not enable these at class level
- * @magentoAppIsolation enabled
- * @magentoDbIsolation enabled
- */
 class ExpiredAuthorizationsTest extends \PHPUnit\Framework\TestCase
 {
     public function setUp(): void
@@ -55,7 +50,7 @@ class ExpiredAuthorizationsTest extends \PHPUnit\Framework\TestCase
                 "amount" => $order->getGrandTotal() * 100,
                 "capture_method" => "manual",
                 "description" => "Order #" . $order->getIncrementId() . " by Mario Osterhagen",
-                "setup_future_usage" => "on_session",
+                "setup_future_usage" => "off_session",
                 "customer" => $customer->id
             ],
             "customer_email" => "unset",

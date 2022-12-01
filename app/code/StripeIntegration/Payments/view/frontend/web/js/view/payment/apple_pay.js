@@ -33,7 +33,8 @@ define(
             defaults: {
                 // template: 'StripeIntegration_Payments/payment/apple_pay_top',
                 stripePaymentsShowApplePaySection: false,
-                isPRAPIrendered: false
+                isPRAPIrendered: false,
+                isTotalsCalculated: false
             },
 
             initObservable: function ()
@@ -64,7 +65,12 @@ define(
                     if (!self.isPRAPIrendered)
                         return;
 
-                    self.initPRAPI();
+                    // Wait for Magento to commit the changes before re-initializing the PRAPI
+                    setTimeout(function()
+                    {
+                        self.isTotalsCalculated = true;
+                        self.initPRAPI();
+                    });
                 }
                 , this);
 
@@ -83,17 +89,21 @@ define(
             markPRAPIready: function()
             {
                 this.isPRAPIrendered = true;
-                this.initPRAPI();
+
+                if (this.isTotalsCalculated)
+                    this.initPRAPI();
+                else
+                    return;
             },
 
             initPRAPI: function()
             {
-                if (!this.config().enabled)
+                if (!this.config().isWalletButtonEnabled)
                     return;
 
                 var self = this;
                 var params = self.config().initParams;
-                stripeExpress.initStripeExpress('#payment-request-button', params, 'checkout', self.config().buttonConfig,
+                stripeExpress.initStripeExpress('#payment-request-button', params, 'checkout', self.config().prapiButtonConfig,
                     function (paymentRequestButton, paymentRequest, params, prButton) {
                         stripeExpress.initCheckoutWidget(paymentRequestButton, paymentRequest, prButton, self.beginApplePay.bind(self));
                     }
@@ -112,38 +122,43 @@ define(
 
             config: function()
             {
-                return window.checkoutConfig.payment['wallet_button'];
+                return window.checkoutConfig.payment['stripe_payments'];
             },
 
             beginApplePay: function(ev)
             {
+                this.makeActive();
                 if (!this.validate())
                 {
                     ev.preventDefault();
                 }
             },
 
+            makeActive: function()
+            {
+                // If there are any selected payment methods from a different section, make them inactive
+                // This ensures that their form validations will not run
+                try
+                {
+                    selectPaymentMethod(null);
+                }
+                catch (e) {}
+
+                // We do want terms & conditions validation for Apple Pay, so activate that temporarily
+                $(".payment-method.stripe-payments.mobile").addClass("_active");
+            },
+
             validate: function(region)
             {
-                var agreementsConfig = window.checkoutConfig ? window.checkoutConfig.checkoutAgreements : {},
-                    agreementsInputPath = '.payment-method.stripe-payments.mobile div.checkout-agreements input';
-                var isValid = true;
-
-                if (!agreementsConfig.isEnabled || $(agreementsInputPath).length === 0) {
+                if (agreementValidator.validate() && additionalValidators.validate())
                     return true;
-                }
 
-                $(agreementsInputPath).each(function (index, element)
-                {
-                    if (!$.validator.validateSingleElement(element, {
-                        errorElement: 'div',
-                        hideError: false
-                    })) {
-                        isValid = false;
-                    }
-                });
+                if (!agreementValidator.validate())
+                    this.showError($t("Please agree to the terms and conditions before placing the order."));
+                else
+                    this.showError($t("Please complete all required fields before placing the order."));
 
-                return isValid;
+                return false;
             },
 
             showError: function(message)

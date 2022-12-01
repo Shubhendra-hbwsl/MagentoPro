@@ -12,6 +12,7 @@ class Cancel extends \Magento\Framework\App\Action\Action
     protected $orderFactory;
     protected $helper;
     protected $invoiceService;
+    protected $dbTransaction;
 
     public function __construct(
         \Magento\Framework\App\Action\Context $context,
@@ -20,7 +21,8 @@ class Cancel extends \Magento\Framework\App\Action\Action
         \Magento\Sales\Model\OrderFactory $orderFactory,
         \StripeIntegration\Payments\Helper\Generic $helper,
         \StripeIntegration\Payments\Model\Config $config,
-        \Magento\Sales\Model\Service\InvoiceService $invoiceService
+        \Magento\Sales\Model\Service\InvoiceService $invoiceService,
+        \Magento\Framework\DB\Transaction $dbTransaction
     )
     {
         $this->resultPageFactory = $resultPageFactory;
@@ -32,6 +34,7 @@ class Cancel extends \Magento\Framework\App\Action\Action
         $this->helper = $helper;
         $this->config = $config;
         $this->invoiceService = $invoiceService;
+        $this->dbTransaction = $dbTransaction;
     }
 
     /**

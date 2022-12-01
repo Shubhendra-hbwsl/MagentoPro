@@ -2,11 +2,6 @@
 
 namespace StripeIntegration\Payments\Test\Integration\Frontend\RedirectFlow\AuthorizeCapture\Normal;
 
-/**
- * Magento 2.3.7-p3 does not enable these at class level
- * @magentoAppIsolation enabled
- * @magentoDbIsolation enabled
- */
 class AvailabilityTest extends \PHPUnit\Framework\TestCase
 {
     public function setUp(): void
@@ -346,49 +341,7 @@ class AvailabilityTest extends \PHPUnit\Framework\TestCase
                 "cartType" => "Normal",
                 "billingAddress" => "California",
                 "shippingAddress" => "California",
-                "supportedMethods" => [ "card", "us_bank_account" ]
-            ]
-        ];
-    }
-
-    /**
-     * @magentoAppIsolation enabled
-     * @magentoConfigFixture current_store payment/stripe_payments/payment_flow 1
-     *
-     * @magentoConfigFixture current_store currency/options/base USD
-     * @magentoConfigFixture current_store currency/options/allow JPY,USD
-     * @magentoConfigFixture current_store currency/options/default JPY
-     *
-     * @magentoDataFixture ../../../../app/code/StripeIntegration/Payments/Test/Integration/_files/Data/ApiKeysJP.php
-     * @dataProvider JPMethodProvider
-     */
-    public function testJPMethodAvailability($cartType, $billingAddress, $shippingAddress, $supportedMethods)
-    {
-        $this->quote->create()
-            ->setCustomer('Guest')
-            ->setCart($cartType)
-            ->setShippingMethod("FlatRate")
-            ->setBillingAddress($billingAddress)
-            ->setShippingAddress($shippingAddress)
-            ->setPaymentMethod("StripeCheckout");
-
-        $methods = $this->quote->getAvailablePaymentMethods();
-
-        foreach ($supportedMethods as $method)
-        {
-            $this->assertContains($method, $methods, "$method is not available");
-        }
-
-        $this->assertCount(count($supportedMethods), $methods);
-    }
-    public function JPMethodProvider()
-    {
-        return [
-            [
-                "cartType" => "Normal",
-                "billingAddress" => "Tokyo",
-                "shippingAddress" => "Tokyo",
-                "supportedMethods" => [ "card", "konbini" ]
+                "supportedMethods" => [ "card" ]
             ]
         ];
     }

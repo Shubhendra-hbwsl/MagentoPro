@@ -68,7 +68,7 @@ class TaxHelper
             return 0;
 
         $taxDivider = (1 + $taxPercent / 100); // i.e. Convert 8.25 to 1.0825
-        $amountWithoutTax = round(floatval($fullAmount / $taxDivider), 2); // Magento seems to sometimes be flooring instead of rounding tax inclusive prices
+        $amountWithoutTax = round($fullAmount / $taxDivider, 2); // Magento seems to sometimes be flooring instead of rounding tax inclusive prices
         return  $fullAmount - $amountWithoutTax;
     }
 
@@ -77,7 +77,7 @@ class TaxHelper
         if ($taxPercent <= 0 || $fullAmount <= 0 || !is_numeric($fullAmount))
             return 0;
 
-        return round(floatval($fullAmount * ($taxPercent / 100)), 2);
+        return round($fullAmount * ($taxPercent / 100), 2);
     }
 
     public function getShippingTaxRateFromOrder($order, $product)
@@ -174,7 +174,7 @@ class TaxHelper
         else
             $shippingAddress->requestShippingRates($quoteItem);
 
-        return floatval($quoteItem->getBaseShippingAmount());
+        return $quoteItem->getBaseShippingAmount();
     }
 
     public function getBaseShippingTaxFor($quoteItem, $quote)
@@ -191,7 +191,7 @@ class TaxHelper
         foreach ($rates as $rate)
         {
             $percent = $this->getShippingTaxPercentFromRate($rate);
-            $tax += round(floatval($baseShippingAmount * $percent), 2);
+            $tax += round($baseShippingAmount * $percent, 2);
         }
 
         return $tax;

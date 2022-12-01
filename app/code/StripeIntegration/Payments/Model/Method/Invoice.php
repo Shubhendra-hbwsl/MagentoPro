@@ -91,8 +91,10 @@ class Invoice extends \Magento\Payment\Model\Method\Adapter
 
             $info = $this->getInfoInstance();
             $order = $info->getOrder();
-            $this->customer->updateFromOrder($order);
+            $this->customer->createStripeCustomerIfNotExists(false, $order);
             $customerId = $this->customer->getStripeId();
+
+            $this->customer->updateFromOrder($order);
             $invoice = $this->createInvoice($order, $customerId)->finalize();
             $payment->setAdditionalInformation('invoice_id', $invoice->getId());
             $payment->setLastTransId($invoice->getStripeObject()->payment_intent);
@@ -134,7 +136,7 @@ class Invoice extends \Magento\Payment\Model\Method\Adapter
             $rate = $creditmemo->getBaseToOrderRate();
             if (!empty($rate) && is_numeric($rate) && $rate > 0)
             {
-                $amount = round(floatval($amount * $rate), 2);
+                $amount = round($amount * $rate, 2);
                 $diff = $amount - $payment->getAmountPaid();
                 if ($diff > 0 && $diff <= 1) // Solves a currency conversion rounding issue (Magento rounds .5 down)
                     $amount = $payment->getAmountPaid();
@@ -158,7 +160,7 @@ class Invoice extends \Magento\Payment\Model\Method\Adapter
 
             $params = array();
             if ($amount > 0)
-                $params["amount"] = round(floatval($amount * $cents));
+                $params["amount"] = round($amount * $cents);
 
             $pi = \Stripe\PaymentIntent::retrieve($transactionId);
             $charge = $pi->charges->data[0];

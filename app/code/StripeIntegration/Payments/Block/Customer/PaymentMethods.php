@@ -11,16 +11,14 @@ class PaymentMethods extends \Magento\Framework\View\Element\Template
 {
     public function __construct(
         \Magento\Framework\View\Element\Template\Context $context,
+        array $data = [],
         \StripeIntegration\Payments\Helper\Generic $helper,
         \StripeIntegration\Payments\Helper\PaymentMethod $paymentMethodHelper,
-        \StripeIntegration\Payments\Helper\InitParams $initParams,
-        \StripeIntegration\Payments\Model\Config $config,
-        array $data = []
+        \StripeIntegration\Payments\Model\Config $config
     ) {
         $this->stripeCustomer = $helper->getCustomerModel();
         $this->helper = $helper;
         $this->paymentMethodHelper = $paymentMethodHelper;
-        $this->initParams = $initParams;
         $this->config = $config;
 
         parent::__construct($context, $data);
@@ -30,7 +28,7 @@ class PaymentMethods extends \Magento\Framework\View\Element\Template
     {
         try
         {
-            return $this->stripeCustomer->getSavedPaymentMethods(null, true);
+            return $this->stripeCustomer->getSavedPaymentMethods();
         }
         catch (\Exception $e)
         {
@@ -40,13 +38,13 @@ class PaymentMethods extends \Magento\Framework\View\Element\Template
         }
     }
 
-    public function getInitParams()
+    public function getLabel($method)
     {
-        $customer = $this->helper->getCustomerModel();
+        return $this->paymentMethodHelper->getLabel($method);
+    }
 
-        if (!$customer->getStripeId())
-            $customer->createStripeCustomerIfNotExists();
-
-        return $this->initParams->getMyPaymentMethodsParams($customer->getStripeId());
+    public function getIcon($method)
+    {
+        return $this->paymentMethodHelper->getIcon($method);
     }
 }

@@ -476,7 +476,7 @@ class CheckoutSession
 
             $subscriptionTotal = $this->subscriptions->getSubscriptionTotalFromProfile($profile);
 
-            $allSubscriptionsTotal += $this->paymentsHelper->round(floatval($subscriptionTotal), 2);
+            $allSubscriptionsTotal += round($subscriptionTotal, 2);
         }
 
         $remainingAmount = $quote->getGrandTotal() - $allSubscriptionsTotal;
@@ -563,7 +563,7 @@ class CheckoutSession
 
             $subscriptionTotal = $this->subscriptions->getSubscriptionTotalFromProfile($profile);
 
-            $allSubscriptionsTotal += round(floatval($subscriptionTotal), 2);
+            $allSubscriptionsTotal += round($subscriptionTotal, 2);
         }
 
         $remainingAmount = $order->getGrandTotal() - $allSubscriptionsTotal;

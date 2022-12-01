@@ -86,6 +86,9 @@ class ExpressHelper
 
     /**
      * Get Store Config
+     * @param      $path
+     * @param mixed $store
+     *
      * @return mixed
      * @throws \Magento\Framework\Exception\NoSuchEntityException
      */
@@ -120,12 +123,7 @@ class ExpressHelper
      */
     public function getDefaultCountry($store = null)
     {
-        $countryId = $this->directoryHelper->getDefaultCountry($store);
-
-        if ($countryId)
-            return $countryId;
-
-        return $this->scopeConfig->getValue('general/country/default', ScopeInterface::SCOPE_WEBSITES);
+        return $this->directoryHelper->getDefaultCountry($store);
     }
 
     /**
@@ -188,10 +186,6 @@ class ExpressHelper
         if (!$this->paymentsConfig->initStripe())
             return false;
 
-        $enabled = $this->paymentsConfig->getConfigData("global_enabled", "express");
-        if (!$enabled)
-            return false;
-
         $activeLocations = explode(',', $this->paymentsConfig->getConfigData("enabled", "express"));
         if (!in_array($location, $activeLocations))
             return false;
@@ -210,6 +204,8 @@ class ExpressHelper
 
     /**
      * Get Billing Address
+     * @param $request
+     *
      * @return array
      */
     public function getBillingAddress($data)
@@ -219,6 +215,8 @@ class ExpressHelper
 
     /**
      * Get Shipping Address from Result
+     * @param $result
+     *
      * @return array
      */
     public function getShippingAddressFromResult($result)
@@ -392,7 +390,7 @@ class ExpressHelper
 
         $priceInclTax = $priceExclTax + ($priceExclTax * ($rate / 100));
 
-        return round($inclTax ? floatval($priceInclTax) : floatval($priceExclTax), PriceCurrencyInterface::DEFAULT_PRECISION);
+        return round($inclTax ? $priceInclTax : $priceExclTax, PriceCurrencyInterface::DEFAULT_PRECISION);
     }
 
     /**

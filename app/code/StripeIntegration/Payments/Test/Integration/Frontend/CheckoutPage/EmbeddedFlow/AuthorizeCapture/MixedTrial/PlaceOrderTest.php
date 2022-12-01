@@ -4,11 +4,6 @@ namespace StripeIntegration\Payments\Test\Integration\Frontend\CheckoutPage\Embe
 
 use PHPUnit\Framework\Constraint\StringContains;
 
-/**
- * Magento 2.3.7-p3 does not enable these at class level
- * @magentoAppIsolation enabled
- * @magentoDbIsolation enabled
- */
 class PlaceOrderTest extends \PHPUnit\Framework\TestCase
 {
     public function setUp(): void
@@ -80,12 +75,12 @@ class PlaceOrderTest extends \PHPUnit\Framework\TestCase
 
         $invoice = $invoicesCollection->getFirstItem();
         $this->assertCount(2, $invoice->getAllItems());
-        $this->assertEquals(\Magento\Sales\Model\Order\Invoice::STATE_PAID, $invoice->getState());
+        $this->assertEquals(\Magento\Sales\Model\Order\Invoice::STATE_OPEN, $invoice->getState());
         $this->assertEquals($paymentIntentId, $invoice->getTransactionId());
-        $this->tests->compare($order->getData(), [
-            "total_paid" => $order->getGrandTotal(),
-            "base_total_paid" => $order->getBaseGrandTotal(),
-        ]);
+        $this->assertEquals(15.83, $order->getTotalPaid());
+        $this->assertEquals(15.83, $order->getBaseTotalPaid());
+        $this->assertEquals(15.83, $order->getTotalDue());
+        $this->assertEquals(15.83, $order->getBaseTotalDue());
 
         // Check that the transaction IDs have been associated with the order
         $transactions = $this->tests->helper()->getOrderTransactions($order);
@@ -93,7 +88,7 @@ class PlaceOrderTest extends \PHPUnit\Framework\TestCase
         foreach ($transactions as $key => $transaction)
         {
             $this->assertEquals($paymentIntentId, $transaction->getTxnId());
-            $this->assertContains($transaction->getTxnType(), ["capture", "refund"]);
+            $this->assertEquals("capture", $transaction->getTxnType());
             $this->assertEquals(15.83, $transaction->getAdditionalInformation("amount"));
         }
 
@@ -105,9 +100,32 @@ class PlaceOrderTest extends \PHPUnit\Framework\TestCase
         $newOrdersCount = $this->tests->getOrdersCount();
         $this->assertEquals($ordersCount + 1, $newOrdersCount);
 
-        // Check that the transaction IDs has NOT been associated with the old order
+        // Check that the order invoice was marked as paid
+        $order = $this->tests->refreshOrder($order);
+        $this->assertEquals(31.66, $order->getTotalPaid());
+        $this->assertEquals(0, $order->getTotalDue());
+        $invoicesCollection = $order->getInvoiceCollection();
+        $invoice = $invoicesCollection->getFirstItem();
+        $this->assertEquals(\Magento\Sales\Model\Order\Invoice::STATE_PAID, $invoice->getState());
+        $this->assertEquals($paymentIntentId, $invoice->getTransactionId());
+
+        // Check that the transaction IDs have been associated with the order
         $transactions = $this->tests->helper()->getOrderTransactions($order);
-        $this->assertEquals(1, count($transactions));
+        $this->assertEquals(2, count($transactions));
+        foreach ($transactions as $key => $transaction)
+        {
+            if ($transaction->getTxnId() == $subscription->latest_invoice->payment_intent)
+            {
+                $this->assertEquals("capture", $transaction->getTxnType());
+                $this->assertEquals(15.83, $transaction->getAdditionalInformation("amount"));
+            }
+            else
+            {
+                $this->assertEquals($paymentIntentId, $transaction->getTxnId());
+                $this->assertEquals("capture", $transaction->getTxnType());
+                $this->assertEquals(15.83, $transaction->getAdditionalInformation("amount"));
+            }
+        }
 
         // Check the newly created order
         $newOrder = $this->tests->getLastOrder();

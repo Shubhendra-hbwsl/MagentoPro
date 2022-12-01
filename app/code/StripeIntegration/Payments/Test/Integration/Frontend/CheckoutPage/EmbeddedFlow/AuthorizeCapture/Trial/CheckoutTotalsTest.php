@@ -6,11 +6,6 @@ use Magento\Checkout\Model\Session as CheckoutSession;
 use Magento\Checkout\Model\SessionFactory as CheckoutSessionFactory;
 use PHPUnit\Framework\Constraint\StringContains;
 
-/**
- * Magento 2.3.7-p3 does not enable these at class level
- * @magentoAppIsolation enabled
- * @magentoDbIsolation enabled
- */
 class CheckoutTotalsTest extends \PHPUnit\Framework\TestCase
 {
     public function setUp(): void
@@ -33,7 +28,7 @@ class CheckoutTotalsTest extends \PHPUnit\Framework\TestCase
             ->setBillingAddress("California")
             ->setPaymentMethod("SuccessCard");
 
-        $order = $this->quote->placeOrder();
+        $order = $this->quote->mockOrder();
 
         $uiConfigProvider = $this->objectManager->get(\StripeIntegration\Payments\Model\Ui\ConfigProvider::class);
         $uiConfig = $uiConfigProvider->getConfig();

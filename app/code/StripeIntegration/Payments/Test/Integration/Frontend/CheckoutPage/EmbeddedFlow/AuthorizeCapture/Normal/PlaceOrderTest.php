@@ -6,11 +6,6 @@ use Magento\Checkout\Model\Session as CheckoutSession;
 use Magento\Checkout\Model\SessionFactory as CheckoutSessionFactory;
 use PHPUnit\Framework\Constraint\StringContains;
 
-/**
- * Magento 2.3.7-p3 does not enable these at class level
- * @magentoAppIsolation enabled
- * @magentoDbIsolation enabled
- */
 class PlaceOrderTest extends \PHPUnit\Framework\TestCase
 {
     public function setUp(): void
@@ -43,7 +38,7 @@ class PlaceOrderTest extends \PHPUnit\Framework\TestCase
             ->setPaymentMethod("SuccessCard");
 
         $order = $this->quote->placeOrder();
-        $paymentIntent = $this->tests->confirm($order);
+        $this->tests->confirm($order);
 
         // Refresh the order object
         $order = $this->tests->refreshOrder($order);
@@ -54,8 +49,6 @@ class PlaceOrderTest extends \PHPUnit\Framework\TestCase
         $this->assertEquals("processing", $order->getStatus());
         $this->assertNotEmpty($invoicesCollection);
         $this->assertEquals(1, $invoicesCollection->count());
-        $this->assertEquals(0, $order->getTotalDue());
-        $this->assertEquals($order->getGrandTotal(), $order->getTotalPaid());
 
         $invoice = $invoicesCollection->getFirstItem();
 
@@ -64,33 +57,5 @@ class PlaceOrderTest extends \PHPUnit\Framework\TestCase
 
         $transactions = $this->helper->getOrderTransactions($order);
         $this->assertEquals(1, count($transactions));
-
-        $this->assertNotEmpty($paymentIntent->customer);
-        $customer = $this->tests->stripe()->customers->retrieve($paymentIntent->customer);
-
-        $this->tests->compare($customer, [
-            "name" => "Joyce Strother",
-            "phone" => "626-945-7637",
-            "email" => "joyce@example.com",
-            "address" => [
-                "city" => "Mira Loma",
-                "country" => "US",
-                "line1" => "2974 Providence Lane",
-                "postal_code" => "91752",
-                "state" => "California"
-            ],
-            "shipping" => [
-                "address" => [
-                    "city" => "Mira Loma",
-                    "country" => "US",
-                    "line1" => "2974 Providence Lane",
-                    "line2" =>"",
-                    "postal_code" => "91752",
-                    "state" => "California"
-                ],
-                "name" => "Joyce Strother",
-                "phone" => "626-945-7637"
-            ],
-        ]);
     }
 }

@@ -10,16 +10,16 @@ class CaptureAuthorizations
         \StripeIntegration\Payments\Model\Config $config,
         \Magento\Framework\App\CacheInterface $cache,
         \Magento\Sales\Model\ResourceModel\Order\Collection $orderCollection,
+        \Magento\Framework\App\Config\ScopeConfigInterface $scopeConfig,
         \Magento\Framework\Mail\Template\TransportBuilder $transportBuilder,
         \StripeIntegration\Payments\Helper\Generic $helper,
-        \StripeIntegration\Payments\Helper\Email $emailHelper,
         \StripeIntegration\Payments\Helper\Multishipping $multishippingHelper,
         \StripeIntegration\Payments\Model\ResourceModel\Multishipping\Quote\Collection $multishippingQuoteCollection
     ) {
         $this->config = $config;
         $this->cache = $cache;
         $this->orderCollection = $orderCollection;
-        $this->emailHelper = $emailHelper;
+        $this->scopeConfig = $scopeConfig;
         $this->transportBuilder = $transportBuilder;
         $this->helper = $helper;
         $this->multishippingHelper = $multishippingHelper;
@@ -78,15 +78,35 @@ class CaptureAuthorizations
 
     protected function sendReminderEmail($paymentIntentId, $orderCollection)
     {
-        $generalName = $this->emailHelper->getName('general');
-        $generalEmail = $this->emailHelper->getEmail('general');
+        try
+        {
+            $generalEmail = $this->scopeConfig->getValue('trans_email/ident_general/email', \Magento\Store\Model\ScopeInterface::SCOPE_STORE);
+            $generalName = $this->scopeConfig->getValue('trans_email/ident_general/name', \Magento\Store\Model\ScopeInterface::SCOPE_STORE);
 
-        $incrementIds = [];
-        foreach ($orderCollection as $order)
-            $incrementIds[] = "#" . $order->getIncrementId();
+            $sender = [
+                'name' => $generalName,
+                'email' => $generalEmail
+            ];
 
-        $templateVars = [ 'orderNumbers'  => implode(", ", $incrementIds) ];
+            $incrementIds = [];
+            foreach ($orderCollection as $order)
+            {
+                $incrementIds[] = "#" . $order->getIncrementId();
+            }
 
-        $this->emailHelper->send('stripe_expiring_authorization', $generalName, $generalEmail, $generalName, $generalEmail, $templateVars);
+            $transport = $this->transportBuilder
+                ->setTemplateIdentifier('stripe_expiring_authorization')
+                ->setTemplateOptions([ 'area' => 'frontend', 'store' => $this->helper->getStoreId() ])
+                ->setTemplateVars([ 'orderNumbers'  => implode(", ", $incrementIds) ])
+                ->setFromByScope($sender)
+                ->addTo($generalEmail, $generalName)
+                ->getTransport();
+
+            $transport->sendMessage();
+        }
+        catch (\Exception $e)
+        {
+            $this->helper->logError($e->getMessage(), $e->getTraceAsString());
+        }
     }
 }

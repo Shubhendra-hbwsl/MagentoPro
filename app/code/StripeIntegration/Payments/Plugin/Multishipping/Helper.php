@@ -11,11 +11,14 @@ class Helper
         $this->helper = $helper;
     }
 
-    public function aroundIsMultishippingCheckoutAvailable(\Magento\Multishipping\Helper\Data $subject, \Closure $proceed)
+    public function aroundIsMultishippingCheckoutAvailable(\Magento\Multishipping\Helper\Data $subject, $result)
     {
-        if ($this->config->isSubscriptionsEnabled() && $this->helper->hasSubscriptions())
+        if (!$this->config->isSubscriptionsEnabled())
+            return $result;
+
+        if ($this->helper->hasSubscriptions())
             return false;
 
-        return $proceed();
+        return $result;
     }
 }

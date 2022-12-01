@@ -11,6 +11,10 @@ class Subscriptions extends \Magento\Framework\App\Action\Action
      */
     protected $resultPageFactory;
 
+    /**
+     * @param \Magento\Framework\App\Action\Context $context
+     * @param \Magento\Framework\View\Result\PageFactory resultPageFactory
+     */
     public function __construct(
         \Magento\Framework\App\Action\Context $context,
         \Magento\Framework\View\Result\PageFactory $resultPageFactory,
@@ -43,6 +47,8 @@ class Subscriptions extends \Magento\Framework\App\Action\Action
             return $this->viewOrder($params['viewOrder']);
         else if (isset($params['cancel']))
             return $this->cancelSubscription($params['cancel']);
+        else if (isset($params['edit']))
+            return $this->editSubscription($params['edit'], $params['data']);
         else if (isset($params['changeCard']))
             return $this->changeCard($params['changeCard'], $params['subscription_card']);
         else if (!empty($params))
@@ -85,6 +91,37 @@ class Subscriptions extends \Magento\Framework\App\Action\Action
         $this->_redirect('stripe/customer/subscriptions');
     }
 
+    protected function editSubscription($subscriptionId, $data)
+    {
+        try
+        {
+            $editableContent = \StripeIntegration\Payments\Block\Customer\Subscriptions::editableContent();
+
+            if (!$this->stripeCustomer->getStripeId())
+                throw new \Exception("Could not load customer account for subscription with ID $subscriptionId!");
+
+            $subscription = $this->stripeCustomer->getSubscription($subscriptionId);
+
+            foreach ($data as $key => $value)
+            {
+                if (in_array($key, $editableContent) && !empty($value))
+                    $subscription->metadata[$key] = $value;
+            }
+
+            $subscription->save();
+
+            $this->helper->addSuccess("Subscription <b>{$subscription->plan->name}</b> has been updated!");
+        }
+        catch (\Exception $e)
+        {
+            $this->helper->addError("Sorry, the subscription could not be updated. Please contact us for more help.");
+            $this->helper->logError("Could not edit subscription with ID $subscriptionId: " . $e->getMessage());
+            $this->helper->logError($e->getTraceAsString());
+        }
+
+        $this->_redirect('stripe/customer/subscriptions');
+    }
+
     protected function changeCard($subscriptionId, $cardId)
     {
         try
@@ -94,7 +131,7 @@ class Subscriptions extends \Magento\Framework\App\Action\Action
 
             $subscription = \Stripe\Subscription::update($subscriptionId, ['default_payment_method' => $cardId]);
 
-            $this->helper->addSuccess(__("The subscription has been updated."));
+            $this->helper->addSuccess("Subscription <b>{$subscription->plan->name}</b> has been updated!");
         }
         catch (\Exception $e)
         {

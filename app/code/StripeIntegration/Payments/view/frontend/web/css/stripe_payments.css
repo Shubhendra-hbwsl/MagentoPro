@@ -1,7 +1,6 @@
 /* Payment Element */
-.stripe-payments-elements.no-wrap {
+li.stripe-payments-elements.no-wrap {
     white-space: nowrap;
-    margin-bottom: 10px;
 }
 .stripe-permanent-error {
     text-align: center;
@@ -63,6 +62,7 @@ a.subscription-name {
 table.subscription-details {
     font-size: small;
     color: #333;
+    margin-top: 1em;
 }
 table.subscription-details td {
     padding: 0;
@@ -92,67 +92,26 @@ table.subscription-details .stripe-payments span.type {
     font-size: small;
 }
 
-body.stripe_payments-customer-subscriptions .subscription-details .mutable.section {
-    margin-top: 1.2em;
-}
-body.stripe_payments-customer-subscriptions .stripe-subscription-edit img.icon
-{
-    position: relative;
-    top: 10px;
-}
-body.stripe_payments-customer-subscriptions .stripe-subscription-edit span.label
-{
-    margin-left: 5px;
-}
-body.stripe_payments-customer-subscriptions .stripe-subscription-edit span.exp
-{
-    margin-left: 12px;
-}
-body.stripe_payments-customer-subscriptions .stripe-subscription-edit label
-{
-    position: relative;
-    top:  -2px;
-    cursor: pointer;
-}
-body.stripe_payments-customer-subscriptions .stripe-subscription-edit .details {
-    padding-bottom: 1.2em;
-}
-body.stripe_payments-customer-subscriptions .stripe-subscription-edit .action.edit {
-    margin-left: 10px;
-}
-body.stripe_payments-customer-subscriptions .stripe-subscription-edit .static.section .details {
-    cursor: pointer;
-}
-
 /* My Payment Methods section */
-body.stripe_payments-customer-paymentmethods .stripe-payments.delete-method {
+.stripe-payments.delete-method {
     padding-left: 20px;
     background-image: url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAiIGhlaWdodD0iMjAiIHZpZXdCb3g9IjAgMCAyMCAyMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48dGl0bGU+ZGVsZXRlLS1saW5rPC90aXRsZT48cGF0aCBkPSJNMTEuODY2IDkuOTk5bDIuNzQzLTIuNzQ0YTEuMzIyIDEuMzIyIDAgMCAwIC4wMDItMS44NjggMS4zMTggMS4zMTggMCAwIDAtMS44NjguMDAyTDEwIDguMTMzIDcuMjUyIDUuMzg0YTEuMzIzIDEuMzIzIDAgMCAwLTEuODYzLjAwMyAxLjMxNCAxLjMxNCAwIDAgMC0uMDAzIDEuODYzTDguMTM0IDEwbC0yLjc0MyAyLjc0M2ExLjMyMiAxLjMyMiAwIDAgMC0uMDAyIDEuODY4IDEuMzE4IDEuMzE4IDAgMCAwIDEuODY4LS4wMDJMMTAgMTEuODY0bDIuNzQ4IDIuNzQ5YTEuMzIzIDEuMzIzIDAgMCAwIDEuODYzLS4wMDNjLjUyLS41MTkuNTE3LTEuMzUuMDAzLTEuODYzbC0yLjc0OC0yLjc0OHoiIGZpbGw9IiMwMDk5RTUiIGZpbGwtcnVsZT0iZXZlbm9kZCIvPjwvc3ZnPg==');
     background-repeat: no-repeat;
 }
-body.stripe_payments-customer-paymentmethods .saved-payment-methods img.saved-payment-method-icon {
+.stripe-payments.saved-payment-methods img.saved-payment-method-icon {
     position: relative;
     top: 8px;
-    height: 32px;
 }
-body.stripe_payments-customer-paymentmethods .saved-payment-methods td {
+.stripe-payments.saved-payment-methods td {
     line-height: 28px;
 }
-body.stripe_payments-customer-paymentmethods .saved-payment-methods td.saved-payment-method-name {
+.stripe-payments.saved-payment-methods td.saved-payment-method-name {
     padding:  0 10px 10px 10px;
 }
-body.stripe_payments-customer-paymentmethods .saved-payment-methods td.saved-payment-method-name label {
+.stripe-payments.saved-payment-methods td.saved-payment-method-name label {
     margin-left: 10px;
 }
-body.stripe_payments-customer-paymentmethods .saved-payment-methods {
-    margin-bottom: 3em;
-}
-body.stripe_payments-customer-paymentmethods .actions-toolbar {
-    margin-top: 1.5em;
-}
-body.stripe_payments-customer-subscriptions td.col.order {
-    width: 120px;
-}
+
 /* Card Icons */
 .stripe-payments span.type.Visa,
 .stripe-payments span.type.visa { background: url(../img/cards/visa.svg) no-repeat; }
@@ -227,6 +186,24 @@ body.stripe_payments-customer-subscriptions td.col.order {
 }
 .stripe-payments-apple-pay-result > div {
     margin-bottom: 18px;
+}
+
+/* Checkout Errors */
+#stripe-payments-card-errors {
+    border: 0;
+    border-radius: 3px;
+    height: 0;
+    margin: 0 auto;
+    transition: height 1s, margin 1s, border 1s, padding 1s;
+    display: inline-block;
+    padding: 0 1em;
+}
+#stripe-payments-card-errors.populated {
+    border: 1px hsla(0,100%,50%,0.5) dashed;
+    padding: 5px 1em;
+    color: #D20;
+    height: auto;
+    margin: 0.5em auto 1em;
 }
 
 .indent {
@@ -310,36 +287,14 @@ div.stripe-dropdown {
     background: #fff url(../svg/select-bg.svg) no-repeat 98% 14px;
     background-size: 0.8em;
     background-clip: padding-box;
+    font-family: 'Open Sans','Helvetica Neue',Helvetica,Arial,sans-serif;
+    font-size: 16px;
     vertical-align: baseline;
     width: 100%;
     box-sizing: border-box;
     margin-bottom: 12px;
-}
-.stripe-element-border {
     border: 1px solid #e6e6e6;
     border-radius: 5px;
-}
-.stripe-element-font {
-    font-family: 'Open Sans','Helvetica Neue',Helvetica,Arial,sans-serif;
-    font-size: 16px;
-}
-.stripe-element-font .instructions span {
-    padding-left: 3px;
-}
-.stripe-card-cvc-element {
-    margin-top: 10px;
-    margin-bottom: 10px;
-}
-#stripe-card-cvc-element,
-.stripe-card-cvc-element span,
-.stripe-card-cvc-element svg {
-    padding: 10px;
-}
-
-#stripe-card-cvc-element {
-    display: inline-block;
-    width: 40px;
-    min-height: 18px;
 }
 div.stripe-dropdown-selection {
     margin: -10px; /* affects the clickable region */

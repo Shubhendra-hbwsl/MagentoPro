@@ -2,11 +2,6 @@
 
 namespace StripeIntegration\Payments\Test\Integration\Frontend\CheckoutPage\EmbeddedFlow\AuthorizeCapture\ConfigurableSubscription;
 
-/**
- * Magento 2.3.7-p3 does not enable these at class level
- * @magentoAppIsolation enabled
- * @magentoDbIsolation enabled
- */
 class TaxInclusivePricesTest extends \PHPUnit\Framework\TestCase
 {
     public function setUp(): void
@@ -45,7 +40,7 @@ class TaxInclusivePricesTest extends \PHPUnit\Framework\TestCase
             ->setBillingAddress("California")
             ->setPaymentMethod("SuccessCard");
 
-        $order = $this->quote->placeOrder();
+        $order = $this->quote->mockOrder();
         $orderItem = null;
         foreach ($order->getAllItems() as $item)
         {

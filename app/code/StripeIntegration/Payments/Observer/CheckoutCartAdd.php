@@ -19,8 +19,7 @@ class CheckoutCartAdd implements ObserverInterface
         \Magento\Framework\App\RequestInterface $request,
         \Magento\ConfigurableProduct\Model\Product\Type\ConfigurableFactory $configurableProductFactory,
         \StripeIntegration\Payments\Helper\Generic $helper,
-        \StripeIntegration\Payments\Helper\Subscriptions $subscriptions,
-        \StripeIntegration\Payments\Model\Config $config
+        \StripeIntegration\Payments\Helper\Subscriptions $subscriptions
     )
     {
         $this->messageManager = $messageManager;
@@ -29,33 +28,14 @@ class CheckoutCartAdd implements ObserverInterface
         $this->configurableProductFactory = $configurableProductFactory;
         $this->helper = $helper;
         $this->subscriptions = $subscriptions;
-        $this->config = $config;
     }
 
-    public function execute(\Magento\Framework\Event\Observer $observer)
+    public function execute(Observer $observer)
     {
-        if (!$this->config->isSubscriptionsEnabled())
-            return;
-
-        $products = [];
-        $product = $this->getProductFromRequest();
-        if ($product && $product->getId())
-        {
-            $products[] = $product;
-        }
-
+        $products = [ $this->getProductFromRequest() ];
         $quote = $this->helper->getQuote();
         foreach ($quote->getAllItems() as $quoteItem)
-        {
-            if (is_numeric($quoteItem->getProductId()))
-            {
-                $product = $this->helper->loadProductById($quoteItem->getProductId());
-                if ($product && $product->getId())
-                {
-                    $products[] = $product;
-                }
-            }
-        }
+            $products[] = $this->helper->loadProductById($quoteItem->getProductId());
 
         if (!$this->subscriptions->renewTogetherByProducts($products))
         {
@@ -68,21 +48,14 @@ class CheckoutCartAdd implements ObserverInterface
     public function getProductFromRequest()
     {
         $postValues = $this->request->getPostValue();
-        if (empty($postValues['product']) || !is_numeric($postValues['product']))
-            return null;
-
         $productId = $postValues['product'];
         $addProduct = $this->helper->loadProductById($productId);
         if ($addProduct->getTypeId() == 'configurable')
         {
-            if (empty($postValues['super_attribute']))
-                return $addProduct;
-
             $attributes = $postValues['super_attribute'];
             $configurableProduct = $this->configurableProductFactory->create();
             $product = $configurableProduct->getProductByAttributes($attributes, $addProduct);
-            if ($product)
-                $addProduct = $this->helper->loadProductById($product->getId());
+            $addProduct = $this->helper->loadProductById($product->getId());
         }
 
         return $addProduct;

@@ -59,7 +59,7 @@ class AddInitialFeeToTotalsBlock
             $rate = 1;
 
         $baseFee = $this->fees[$order->getId()];
-        $fee = round(floatval($baseFee * $rate), 2);
+        $fee = round($baseFee * $rate, 2);
         if ($fee > 0)
         {
             $subject->addTotalBefore(new DataObject([

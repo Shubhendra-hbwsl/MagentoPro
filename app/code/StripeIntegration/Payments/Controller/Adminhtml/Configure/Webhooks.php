@@ -8,12 +8,17 @@ class Webhooks extends \Magento\Framework\App\Action\Action
 {
     protected $resultPageFactory;
 
+    /**
+     * @param \Magento\Framework\App\Action\Context $context
+     * @param \Magento\Framework\View\Result\PageFactory resultPageFactory
+     */
     public function __construct(
         \Magento\Framework\App\Action\Context $context,
         \Magento\Framework\View\Result\PageFactory $resultPageFactory,
         \Magento\Framework\Controller\Result\JsonFactory $resultJsonFactory,
         \StripeIntegration\Payments\Helper\Generic $helper,
-        \StripeIntegration\Payments\Helper\WebhooksSetup $webhooksSetup
+        \StripeIntegration\Payments\Helper\WebhooksSetup $webhooksSetup,
+        \Magento\Framework\DB\Transaction $dbTransaction
     )
     {
         parent::__construct($context);
@@ -22,6 +27,7 @@ class Webhooks extends \Magento\Framework\App\Action\Action
         $this->resultJsonFactory = $resultJsonFactory;
         $this->helper = $helper;
         $this->webhooksSetup = $webhooksSetup;
+        $this->dbTransaction = $dbTransaction;
     }
 
     public function execute()

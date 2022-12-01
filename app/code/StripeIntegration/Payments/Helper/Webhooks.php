@@ -7,8 +7,6 @@ use StripeIntegration\Payments\Exception\WebhookException;
 
 class Webhooks
 {
-    protected $output = null;
-
     public function __construct(
         \Magento\Framework\App\Request\Http $request,
         \Magento\Framework\App\Response\Http $response,
@@ -25,14 +23,14 @@ class Webhooks
         \StripeIntegration\Payments\Model\Config $config,
         \Magento\Sales\Model\Order\CreditmemoFactory $creditmemoFactory,
         \Magento\Sales\Model\Service\CreditmemoService $creditmemoService,
+        \Magento\Framework\DB\TransactionFactory $transactionFactory,
         \Magento\Sales\Model\Order\Invoice $invoiceModel,
         \Magento\Framework\UrlInterface $urlInterface,
         \StripeIntegration\Payments\Model\ResourceModel\Webhook\Collection $webhookCollection,
         \StripeIntegration\Payments\Model\ResourceModel\Source\CollectionFactory $sourceCollectionFactory,
         \StripeIntegration\Payments\Model\PaymentIntentFactory $paymentIntentFactory,
         \StripeIntegration\Payments\Model\CheckoutSessionFactory $checkoutSessionFactory,
-        \StripeIntegration\Payments\Helper\WebhooksSetup $webhooksSetup,
-        \StripeIntegration\Payments\Helper\Email $emailHelper
+        \StripeIntegration\Payments\Helper\WebhooksSetup $webhooksSetup
     ) {
         $this->request = $request;
         $this->response = $response;
@@ -50,6 +48,7 @@ class Webhooks
         $this->config = $config;
         $this->creditmemoFactory = $creditmemoFactory;
         $this->creditmemoService = $creditmemoService;
+        $this->transactionFactory = $transactionFactory;
         $this->invoiceModel = $invoiceModel;
         $this->urlInterface = $urlInterface;
         $this->webhookCollection = $webhookCollection;
@@ -57,40 +56,21 @@ class Webhooks
         $this->paymentIntentFactory = $paymentIntentFactory;
         $this->checkoutSessionFactory = $checkoutSessionFactory;
         $this->webhooksSetup = $webhooksSetup;
-        $this->emailHelper = $emailHelper;
     }
 
-    public function setOutput(\Symfony\Component\Console\Output\OutputInterface $output)
-    {
-        $this->output = $output;
-    }
-
-    public function dispatchEvent($stdEvent = null)
+    public function dispatchEvent()
     {
         try
         {
-            if (!$stdEvent)
-            {
-                if ($this->request->getMethod() == 'GET')
-                    throw new WebhookException("Your webhooks endpoint is accessible from your location.", 200);
+            if ($this->request->getMethod() == 'GET')
+                throw new WebhookException("Your webhooks endpoint is accessible!", 200);
 
-                // Retrieve the request's body and parse it as JSON
-                $body = $this->request->getContent();
-                $event = json_decode($body, true);
-                $stdEvent = json_decode($body);
+            $this->verifyWebhookSignature();
 
-                $eventType = $this->getEventType($event);
-                $this->log("Received $eventType");
-
-                $this->verifyWebhookSignature();
-            }
-            else
-            {
-                $event = json_decode(json_encode($stdEvent), true);
-
-                $eventType = $this->getEventType($event);
-                $this->log("Received $eventType");
-            }
+            // Retrieve the request's body and parse it as JSON
+            $body = $this->request->getContent();
+            $event = json_decode($body, true);
+            $stdEvent = json_decode($body);
 
             if (empty($event['type']))
                 throw new WebhookException(__("Unknown event type"));
@@ -104,6 +84,9 @@ class Webhooks
 
             if ($this->cache->load($event['id']) && empty($this->request->getParam('dev')))
                 throw new WebhookException(__("Event with ID %1 has already been processed.", $event['id']), 202);
+
+            $eventType = $this->getEventType($event);
+            $this->log("Received $eventType");
 
             $this->response->setStatusCode(500);
             $this->eventManager->dispatch($eventType, array(
@@ -144,9 +127,6 @@ class Webhooks
 
     protected function getEventType(array $event)
     {
-        if (empty($event['type']))
-            return "payload with no event type";
-
         $eventType = "stripe_payments_webhook_" . str_replace(".", "_", $event['type']);
         return $eventType;
     }
@@ -182,19 +162,6 @@ class Webhooks
 
     public function error($msg, $status, $displayError = false)
     {
-        if ($this->output)
-        {
-            if ($status)
-            {
-                if ($status < 300)
-                    return $this->output->writeln("$status $msg");
-                else
-                    return $this->output->writeln("<error>$status $msg</error>");
-            }
-            else
-                return $this->output->writeln("<error>$msg</error>");
-        }
-
         if ($status && $status > 0)
             $this->log("$status $msg");
         else
@@ -211,10 +178,8 @@ class Webhooks
 
     public function log($msg)
     {
-        if ($this->output)
-            $this->output->writeln($msg);
         // Magento 2.0.0 - 2.4.3
-        else if (method_exists($this->webhooksLogger, 'addInfo'))
+        if (method_exists($this->webhooksLogger, 'addInfo'))
             $this->webhooksLogger->addInfo($msg);
         // Magento 2.4.4+
         else
@@ -228,8 +193,6 @@ class Webhooks
             return;
 
         $success = false;
-        $errors = [];
-        $count = 1;
         foreach ($signingSecrets as $signingSecret)
         {
             try
@@ -244,23 +207,16 @@ class Webhooks
             }
             catch(\UnexpectedValueException $e)
             {
-                $key = hash('md2', $e->getMessage());
-                $errors[$key] = "#" . $count++ . " " . $e->getMessage();
-
                 throw new WebhookException("Invalid webhook payload.", 400);
             }
             catch(\Stripe\Exception\SignatureVerificationException $e)
             {
-                $key = hash('md2', $e->getMessage());
-                $errors[$key] = "#" . $count++ . " " . $e->getMessage();
+
             }
         }
 
         if (!$success)
-        {
-            $this->log("Webhook origin check failed with " . count($errors) . " errors:\n" . implode("\n", $errors));
             throw new WebhookException("Webhook origin check failed.", 400);
-        }
     }
 
     public function cache($event)
@@ -268,12 +224,11 @@ class Webhooks
         if (empty($event['id']))
             throw new WebhookException("No event ID specified");
 
-        // Cache for 15 days
-        $this->cache->save("processed", $event['id'], array('stripe_payments_webhooks_events_processed'), 15 * 24 * 60 * 60);
+        $this->cache->save("processed", $event['id'], array('stripe_payments_webhooks_events_processed'), 24 * 60 * 60);
     }
 
     // Does not throw an exception
-    public function getOrderIdFromObject(array $object, $includeMultishipping = false)
+    public function getOrderIdFromObject(array $object)
     {
         // For most payment methods, the order ID is here
         if (!empty($object['metadata']['Order #']))
@@ -320,23 +275,7 @@ class Webhooks
         else if ($object['object'] == 'charge' && !empty($object['invoice']) && !empty($object['customer']) && $this->config->reInitStripeFromCustomerId($object['customer']))
         {
             $stripe = $this->config->getStripeClient();
-            $count = 2;
-            $invoice = null;
-            do
-            {
-                try
-                {
-                    $invoice = $stripe->invoices->retrieve($object['invoice'], ['expand' => ['subscription']]);
-                }
-                catch (\Exception $e)
-                {
-                    // Sometimes we get: This object cannot be accessed right now because another API request or Stripe process is currently accessing it.
-                    sleep(1);
-                }
-                $count--;
-            }
-            while ($count > 0 && empty($invoice));
-
+            $invoice = $stripe->invoices->retrieve($object['invoice'], ['expand' => ['subscription']]);
             if (!empty($invoice->subscription->metadata->{"Order #"}))
                 return $invoice->subscription->metadata->{"Order #"};
         }
@@ -349,26 +288,10 @@ class Webhooks
         // Triggered via stripe_payments_webhook_review_closed
         else if (!empty($object['payment_intent']))
         {
-            if ($includeMultishipping)
-            {
-                // Search for all orders which have this payment intent as a transaction ID
-                $orders = $this->helper->getOrdersByTransactionId($object['payment_intent']);
-                if (!empty($orders))
-                {
-                    $ids = [];
-                    foreach ($orders as $order)
-                        $ids[$order->getIncrementId()] = $order->getIncrementId();
-
-                    return $ids;
-                }
-            }
-            else
-            {
-                $paymentIntent = $this->paymentIntentFactory->create()->load($object['payment_intent'], 'pi_id');
-                $orderId = $paymentIntent->getOrderIncrementId();
-                if ($orderId)
-                    return $orderId;
-            }
+            $paymentIntent = $this->paymentIntentFactory->create()->load($object['payment_intent'], 'pi_id');
+            $orderId = $paymentIntent->getOrderIncrementId();
+            if ($orderId)
+                return $orderId;
         }
 
         return null;
@@ -392,12 +315,9 @@ class Webhooks
         return $this->loadWebhookOrderByIncrementId($entry->getOrderIncrementId(), $event);
     }
 
-    public function loadOrderFromEvent(?array $event, $includeMultishipping = false)
+    public function loadOrderFromEvent(array $event, $includeMultishipping = false)
     {
-        if (!is_array($event))
-            throw new WebhookException(__("Received invalid request payload."), 400);
-
-        $orderId = $this->getOrderIdFromObject($event['data']['object'], $includeMultishipping);
+        $orderId = $this->getOrderIdFromObject($event['data']['object']);
 
         if (empty($orderId))
             throw new WebhookException(__("Received %1 webhook but there was no associated Order #", $event['type']), 202);
@@ -618,6 +538,8 @@ class Webhooks
         if ($order->getState() == "holded" && $order->canUnhold())
             $order->unhold();
 
+        $dbTransaction = $this->transactionFactory->create();
+
         // Check if the order has an invoice with the charge ID we are refunding
         $chargeId = $object['id'];
         $chargeAmount = $object['amount'];
@@ -667,27 +589,24 @@ class Webhooks
                 {
                     if ($invoice->canCancel())
                     {
+                        $dbTransaction->addObject($invoice);
                         $invoice->cancel();
-                        $this->helper->saveInvoice($invoice);
                         $canceled++;
                     }
                 }
                 if ($canceled > 0)
                 {
                     if ($order->canCancel())
-                    {
-                        $order->getPayment()->setCancelOfflineWithComment(__("The authorization was canceled via Stripe."));
                         $order->cancel();
-                    }
 
-                    $this->helper->saveOrder($order);
+                    $dbTransaction->addObject($order)->save();
                     return true;
                 }
             }
 
             $msg = __('A refund was issued via Stripe, but a Credit Memo could not be created.');
             $this->helper->addOrderComment($msg, $order);
-            $this->helper->saveOrder($order);
+            $dbTransaction->addObject($order)->save();
             return false;
         }
 
@@ -697,51 +616,29 @@ class Webhooks
             $humanReadable2 = $this->helper->addCurrencySymbol($totalNotRefunded, $currency);
             $msg = __('A refund of %1 was issued via Stripe, but the amount is bigger than the available of %2.', $humanReadable1, $humanReadable2);
             $this->helper->addOrderComment($msg, $order);
-            $this->helper->saveOrder($order);
+            $dbTransaction->addObject($order)->save();
             return false;
         }
         else
         {
+            $creditmemo = $this->creditmemoFactory->createByOrder($order);
             $baseDiff = $baseTotalNotRefunded - $baseRefundAmount;
 
-            $qtys = [];
-            foreach ($order->getAllVisibleItems() as $orderItem)
+            if ($isPartialRefund)
             {
-                $orderItemId = $orderItem->getId();
-                $qty = $orderItem->getQtyOrdered();
-
-                if ($isPartialRefund)
-                    $qtys[$orderItemId] = 0;
-                else
-                    $qtys[$orderItemId] = $qty;
-            }
-
-            if ($order->getBaseShippingAmount())
-            {
-                $baseShippingAmount = $order->getBaseShippingAmount();
-            }
-            else if ($order->getShippingAmount())
-            {
-                $baseShippingAmount = $this->helper->convertOrderAmountToBaseAmount($order->getShippingAmount(), $order->getOrderCurrencyCode(), $order);
+                // We don't have any information from Stripe on what products we are refunding
+                $creditmemo->setItems([]);
+                $creditmemo->setShippingAmount(0);
+                $creditmemo->setAdjustmentPositive($baseDiff);
+                $creditmemo->setAdjustmentNegative(0);
             }
             else
             {
-                $baseShippingAmount = '0';
+                $creditmemo->setItems($order->getAllItems());
+                $creditmemo->setShippingAmount($order->getShippingAmount());
+                $creditmemo->setAdjustmentPositive(0);
+                $creditmemo->setAdjustmentNegative(0);
             }
-
-            $params = [
-                "qtys" => $qtys,
-                "shipping_amount" => '0',
-                "adjustment_positive" => ($isPartialRefund ? $baseRefundAmount : '0'),
-                "adjustment_negative" => '0',
-                "send_email" => '1',
-                "do_offline" => '1',
-                "items" => [ $qtys ],
-                // "comment_text" => __(""),
-                // "comment_customer_notify" => 1
-            ];
-
-            $creditmemo = $this->creditmemoFactory->createByOrder($order, $params);
         }
 
         $invoice = $this->getInvoiceWithTransactionId($chargeId, $order);
@@ -762,9 +659,11 @@ class Webhooks
         $comment = __("We refunded %1 through Stripe.", $this->helper->addCurrencySymbol($refundAmount, $currency));
         $order->addStatusToHistory($status = false, $comment);
 
-        $this->helper->saveOrder($order);
-        $this->helper->saveCreditmemo($creditmemo);
-        $this->helper->savePayment($payment);
+        $dbTransaction
+            ->addObject($order)
+            ->addObject($creditmemo)
+            ->addObject($payment)
+            ->save();
 
         return true;
     }
@@ -792,43 +691,6 @@ class Webhooks
                 $endpoint = \Stripe\WebhookEndpoint::retrieve($endpoint->id);
                 $endpoint->delete();
             }
-        }
-    }
-
-    public function sendRecurringOrderFailedEmail($eventArray, $exception)
-    {
-        try
-        {
-            $generalName = $this->emailHelper->getName('general');
-            $generalEmail = $this->emailHelper->getEmail('general');
-
-            if ($eventArray['livemode'])
-                $mode = '';
-            else
-                $mode = 'test/';
-
-            $object = $eventArray['data']['object'];
-
-            $templateVars = [
-                'paymentLink' => "https://dashboard.stripe.com/{$mode}payments/" . $object["payment_intent"],
-                'subscriptionLink' => "https://dashboard.stripe.com/{$mode}subscriptions/" . $object["subscription"],
-                'customerLink' => "https://dashboard.stripe.com/{$mode}customers/" . $object["customer"],
-                'errorMessage' => $exception->getMessage(),
-                'stackTrace' => $exception->getTraceAsString(),
-                'eventLink' => "https://dashboard.stripe.com/{$mode}events/" . $eventArray["id"]
-            ];
-
-            $sent = $this->emailHelper->send('stripe_failed_recurring_order', $generalName, $generalEmail, $generalName, $generalEmail, $templateVars);
-
-            if (!$sent)
-            {
-                $this->helper->logError($exception->getMessage(), $exception->getTraceAsString());
-            }
-        }
-        catch (\Exception $e)
-        {
-            $this->helper->logError($e->getMessage(), $e->getTraceAsString());
-            $this->helper->logError($exception->getMessage(), $exception->getTraceAsString());
         }
     }
 }

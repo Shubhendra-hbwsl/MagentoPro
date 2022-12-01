@@ -7,6 +7,10 @@ use Magento\Framework\Exception\LocalizedException;
 use StripeIntegration\Payments\Exception\SCANeededException;
 use StripeIntegration\Payments\Helper\Logger;
 
+// DEBUG:
+use \Laminas\Log\Writer\Stream;
+use \Laminas\Log\Logger as LaminasLogger;
+
 class PaymentIntent extends \Magento\Framework\Model\AbstractModel
 {
     public $paymentIntent = null;
@@ -14,6 +18,7 @@ class PaymentIntent extends \Magento\Framework\Model\AbstractModel
     public $order = null;
     public $savedCard = null;
     protected $customParams = [];
+    public $laminaLogger;
 
     const SUCCEEDED = "succeeded";
     const AUTHORIZED = "requires_capture";
@@ -24,9 +29,9 @@ class PaymentIntent extends \Magento\Framework\Model\AbstractModel
     const AUTHENTICATION_FAILURE = "payment_intent_authentication_failure";
 
     public function __construct(
-        \StripeIntegration\Payments\Helper\Data $dataHelper,
         \StripeIntegration\Payments\Helper\Generic $helper,
         \StripeIntegration\Payments\Helper\Compare $compare,
+        \StripeIntegration\Payments\Helper\Rollback $rollback,
         \StripeIntegration\Payments\Helper\Subscriptions $subscriptionsHelper,
         \StripeIntegration\Payments\Helper\Address $addressHelper,
         \StripeIntegration\Payments\Model\Config $config,
@@ -42,9 +47,9 @@ class PaymentIntent extends \Magento\Framework\Model\AbstractModel
         array $data = []
         )
     {
-        $this->dataHelper = $dataHelper;
         $this->helper = $helper;
         $this->compare = $compare;
+        $this->rollback = $rollback;
         $this->subscriptionsHelper = $subscriptionsHelper;
         $this->addressHelper = $addressHelper;
         $this->cache = $context->getCacheManager();
@@ -55,6 +60,11 @@ class PaymentIntent extends \Magento\Framework\Model\AbstractModel
         $this->addressFactory = $addressFactory;
         $this->session = $session;
         $this->checkoutHelper = $checkoutHelper;
+
+        // DEBUG:
+        $logWriter = new Stream(BP . '/var/log/custom_stripe.log');
+        $this->laminaLogger = new LaminasLogger();
+        $this->laminaLogger->addWriter($logWriter);
 
         parent::__construct($context, $registry, $resource, $resourceCollection, $data);
     }
@@ -69,12 +79,15 @@ class PaymentIntent extends \Magento\Framework\Model\AbstractModel
         $this->customParams = $params;
     }
 
-    protected function getQuoteIdFrom($quote)
+    protected function getQuoteId($quote)
     {
         if (empty($quote))
             return null;
-        else if ($quote->getId())
+        else if ($quote->getId()){
+            // USER STORY:
+            $this->laminaLogger->info("Quote ID:" . $quote->getId());
             return $quote->getId();
+        }
         else if ($quote->getQuoteId())
             throw new \Exception("Invalid quote passed during payment intent creation."); // Need to find the admin case which causes this
         else
@@ -82,32 +95,24 @@ class PaymentIntent extends \Magento\Framework\Model\AbstractModel
     }
 
     // If we already created any payment intents for this quote, load them
-    public function loadFromCache($params, $quote, $order, $paymentIntentId = null)
+    public function loadFromCache($params, $quote, $order)
     {
-        $quoteId = $this->getQuoteIdFrom($quote);
+        $quoteId = $this->getQuoteId($quote);
         if (!$quoteId)
             return null;
 
         $this->load($quoteId, 'quote_id');
         if (!$this->getPiId())
-        {
-            if (!$this->getQuoteId() && !empty($paymentIntentId))
-            {
-                // Case where we don't yet have an entry in this table, so we add it on the fly
-                $this->setQuoteId($quoteId);
-                $this->setPiId($paymentIntentId);
-                $this->save();
-            }
-            else
-            {
-                return null;
-            }
-        }
+            return null;
+
         $paymentIntent = null;
 
         try
         {
             $paymentIntent = $this->loadPaymentIntent($this->getPiId(), $order);
+            // USER STORY:
+            // Logs Payment intent to var log file
+            $this->laminaLogger->info("Payment Intent JSON " . $paymentIntent);
         }
         catch (\Exception $e)
         {
@@ -215,15 +220,10 @@ class PaymentIntent extends \Magento\Framework\Model\AbstractModel
         $this->save();
     }
 
-    protected function getPaymentMethodOptions($quote, $savePaymentMethod = null)
+    protected function getPaymentMethodOptions($quote)
     {
         $sfuOptions = $captureOptions = [];
-
-        if ($this->helper->isAdmin() && $savePaymentMethod)
-            $setupFutureUsage = "on_session";
-        else
-            $setupFutureUsage = $this->config->getSetupFutureUsage($quote);
-
+        $setupFutureUsage = $this->config->getSetupFutureUsage($quote);
         if ($setupFutureUsage)
         {
             $value = ["setup_future_usage" => $setupFutureUsage];
@@ -234,25 +234,19 @@ class PaymentIntent extends \Magento\Framework\Model\AbstractModel
             if ($setupFutureUsage == "on_session" && $this->config->isAuthorizeOnly() && $this->config->retryWithSavedCard())
                 $value = ["setup_future_usage" =>  "off_session"];
 
-            $canBeSavedOnSession = \StripeIntegration\Payments\Helper\PaymentMethod::CAN_BE_SAVED_ON_SESSION;
-            foreach ($canBeSavedOnSession as $code)
-            {
-                if (isset($sfuOptions[$code]))
-                    continue;
+            $sfuOptions['bacs_debit'] = $value;
+            $sfuOptions['au_becs_debit'] = $value;
+            $sfuOptions['boleto'] = $value;
+            $sfuOptions['card'] = $value;
+            $sfuOptions['acss_debit'] = $value;
+            $sfuOptions['sepa_debit'] = $value;
 
-                $sfuOptions[$code] = $value;
-            }
-
-            // The following methods do not display if we request an on_session setup
+            // The following methods do not support on_session
             $value = ["setup_future_usage" => "off_session"];
-            $canBeSavedOffSession = \StripeIntegration\Payments\Helper\PaymentMethod::CAN_BE_SAVED_OFF_SESSION;
-            foreach ($canBeSavedOffSession as $code)
-            {
-                if (isset($sfuOptions[$code]))
-                    continue;
-
-                $sfuOptions[$code] = $value;
-            }
+            $sfuOptions['alipay'] = $value;
+            $sfuOptions['bancontact'] = $value;
+            $sfuOptions['ideal'] = $value;
+            $sfuOptions['sofort'] = $value;
         }
 
         if ($this->config->isAuthorizeOnly($quote))
@@ -277,7 +271,7 @@ class PaymentIntent extends \Magento\Framework\Model\AbstractModel
 
         foreach ($orders as $order)
         {
-            $amount += round(floatval($order->getGrandTotal()), 2);
+            $amount += round($order->getGrandTotal(), 2);
             $currency = $order->getOrderCurrencyCode();
             $orderIncrementIds[] = $order->getIncrementId();
         }
@@ -286,7 +280,7 @@ class PaymentIntent extends \Magento\Framework\Model\AbstractModel
         if ($this->helper->isZeroDecimal($currency))
             $cents = 1;
 
-        $params['amount'] = round(floatval($amount * $cents));
+        $params['amount'] = round($amount * $cents);
         $params['currency'] = strtolower($currency);
         $params['capture_method'] = $this->getCaptureMethod();
 
@@ -336,24 +330,22 @@ class PaymentIntent extends \Magento\Framework\Model\AbstractModel
         {
             $amount = $order->getGrandTotal();
             $currency = $order->getOrderCurrencyCode();
-            $savePaymentMethod = (bool)$order->getPayment()->getAdditionalInformation("save_payment_method");
         }
         else
         {
             $amount = $quote->getGrandTotal();
             $currency = $quote->getQuoteCurrencyCode();
-            $savePaymentMethod = null;
         }
 
         $cents = 100;
         if ($this->helper->isZeroDecimal($currency))
             $cents = 1;
 
-        $params['amount'] = round(floatval($amount * $cents));
+        $params['amount'] = round($amount * $cents);
         $params['currency'] = strtolower($currency);
         $params['automatic_payment_methods'] = [ 'enabled' => 'true' ];
 
-        $options = $this->getPaymentMethodOptions($quote, $savePaymentMethod);
+        $options = $this->getPaymentMethodOptions($quote);
         if (!empty($options))
             $params["payment_method_options"] = $options;
 
@@ -424,7 +416,7 @@ class PaymentIntent extends \Magento\Framework\Model\AbstractModel
         foreach ($subscriptions as $subscription)
             $subscriptionsTotal += $this->subscriptionsHelper->getSubscriptionTotalFromProfile($subscription['profile']);
 
-        $finalAmount = round(floatval((($amount/$cents) - $subscriptionsTotal) * $cents));
+        $finalAmount = round((($amount/$cents) - $subscriptionsTotal) * $cents);
         return max(0, $finalAmount);
     }
 
@@ -496,28 +488,21 @@ class PaymentIntent extends \Magento\Framework\Model\AbstractModel
                 ]
             ];
         }
-
         if ($this->compare->isDifferent($paymentIntent, $expectedValues))
-        {
             return true;
-        }
 
         // Case where the user navigates to the standard checkout, the PI is created,
         // and then the customer switches to multishipping checkout.
         if ($this->helper->isMultiShipping())
         {
             if (!empty($paymentIntent->automatic_payment_methods))
-            {
                 return true;
-            }
         }
         // ...and vice versa
         else
         {
             if (empty($paymentIntent->automatic_payment_methods))
-            {
                 return true;
-            }
         }
 
         if ($this->isSuccessfulStatus($paymentIntent))
@@ -533,20 +518,8 @@ class PaymentIntent extends \Magento\Framework\Model\AbstractModel
                 $expectedValues[$key] = $value;
             }
 
-            $ignoreValues = [
-                'payment_method_options' // Despite passing these, the returned PI may not support some of the passed payment methods
-            ];
-
-            foreach ($params as $key => $value)
-            {
-                if (in_array($key, $ignoreValues))
-                    unset($expectedValues[$key]);
-            }
-
             if ($this->compare->isDifferent($paymentIntent, $expectedValues))
-            {
                 return true;
-            }
         }
 
         return false;
@@ -587,9 +560,7 @@ class PaymentIntent extends \Magento\Framework\Model\AbstractModel
         $this->paymentIntent = null;
         $this->delete();
         $this->clearInstance();
-        /** @var \StripeIntegration\Payments\Model\ResourceModel\PaymentIntent\Collection $collection */
-        $collection = $this->getCollection();
-        $collection->deleteForQuoteId($quoteId);
+        $this->getCollection()->deleteForQuoteId($quoteId);
 
         if ($paymentIntent && $cancelPaymentIntent && $this->canCancel($paymentIntent))
             $paymentIntent->cancel();
@@ -718,28 +689,14 @@ class PaymentIntent extends \Magento\Framework\Model\AbstractModel
     {
         $confirmParams = [];
 
+        if ($this->helper->isAdmin() && $this->config->isMOTOExemptionsEnabled())
+            $confirmParams["payment_method_options"]["card"]["moto"] = "true";
+
         if ($order->getPayment()->getAdditionalInformation("token"))
             $confirmParams["payment_method"] = $order->getPayment()->getAdditionalInformation("token");
 
         if (!empty($paymentIntent->automatic_payment_methods->enabled))
             $confirmParams["return_url"] = $this->helper->getUrl('stripe/payment/index');
-
-        $quote = $this->helper->loadQuoteById($order->getQuoteId());
-        $options = $this->getPaymentMethodOptions($quote);
-        if (!empty($options))
-        {
-            $confirmParams["payment_method_options"] = $options;
-        }
-
-        if ($this->helper->isAdmin() && !$this->cache->load("no_moto_gate"))
-        {
-            $confirmParams["payment_method_options"]["card"]["moto"] = "true";
-            if ($order->getPayment()->getAdditionalInformation("save_payment_method"))
-            {
-                // Override the existing value
-                $confirmParams["payment_method_options"]["card"]["setup_future_usage"] = "off_session";
-            }
-        }
 
         return $confirmParams;
     }
@@ -749,20 +706,7 @@ class PaymentIntent extends \Magento\Framework\Model\AbstractModel
         try
         {
             $this->paymentIntent = $paymentIntent;
-
-            try
-            {
-                $result = $this->config->getStripeClient()->paymentIntents->confirm($paymentIntent->id, $confirmParams);
-            }
-            catch (\Stripe\Exception\InvalidRequestException $e)
-            {
-                if (!$this->dataHelper->isMOTOError($e->getError()))
-                    throw $e;
-
-                $this->cache->save($value = "1", $key = "no_moto_gate", ["stripe_payments"], $lifetime = 6 * 60 * 60);
-                unset($confirmParams['payment_method_options']['card']['moto']);
-                $result = $this->config->getStripeClient()->paymentIntents->confirm($paymentIntent->id, $confirmParams);
-            }
+            $result = $this->config->getStripeClient()->paymentIntents->confirm($paymentIntent->id, $confirmParams);
 
             if ($this->requiresAction($result))
                 throw new SCANeededException("Authentication Required: " . $paymentIntent->client_secret);
@@ -772,7 +716,7 @@ class PaymentIntent extends \Magento\Framework\Model\AbstractModel
         catch (SCANeededException $e)
         {
             if ($this->helper->isAdmin())
-                $this->helper->dieWithError(__("This payment method cannot be used because it requires a customer authentication. To avoid authentication in the admin area, please contact Stripe support to request access to the MOTO gate for your Stripe account."));
+                $this->helper->dieWithError(__("This payment method cannot be used because it requires a customer authentication. To avoid authentication in the admin area, please contact magento@stripe.com to request access to the MOTO gate for your Stripe account."));
 
             if ($this->helper->isMultiShipping())
                 throw $e;

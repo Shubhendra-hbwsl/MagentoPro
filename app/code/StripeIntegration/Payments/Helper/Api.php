@@ -18,17 +18,19 @@ class Api
         LoggerInterface $logger,
         Generic $helper,
         \StripeIntegration\Payments\Model\PaymentIntent $paymentIntent,
+        \Magento\Framework\Event\ManagerInterface $eventManager,
+        \StripeIntegration\Payments\Helper\Rollback $rollback,
         \Magento\Quote\Model\QuoteFactory $quoteFactory,
-        \Magento\Framework\App\CacheInterface $cache,
         \StripeIntegration\Payments\Model\ResourceModel\PaymentIntent\CollectionFactory $paymentIntentCollectionFactory
     ) {
         $this->logger = $logger;
         $this->helper = $helper;
         $this->config = $config;
         $this->customer = $helper->getCustomerModel();
+        $this->_eventManager = $eventManager;
+        $this->rollback = $rollback;
         $this->paymentIntent = $paymentIntent;
         $this->quoteFactory = $quoteFactory;
-        $this->cache = $cache;
         $this->paymentIntentCollectionFactory = $paymentIntentCollectionFactory;
     }
 
@@ -90,28 +92,8 @@ class Api
 
             $paymentIntent = $this->config->getStripeClient()->paymentIntents->create($params);
             $confirmParams = $this->paymentIntent->getConfirmParams($order, $paymentIntent);
-
-            if (isset($confirmParams['payment_method_options']))
-            {
-                // We don't want to authorize only and we don't want to setup future usage.
-                unset($confirmParams['payment_method_options']);
-            }
-
-            $key = "admin_captured_" . $paymentIntent->id;
-            try
-            {
-                $this->cache->save($value = "1", $key, ["stripe_payments"], $lifetime = 60 * 60);
-                $paymentIntent = $this->paymentIntent->confirm($paymentIntent, $confirmParams);
-            }
-            catch (\Exception $e)
-            {
-                $this->cache->remove($key);
-                throw $e;
-            }
+            $paymentIntent = $this->paymentIntent->confirm($paymentIntent, $confirmParams);
             $this->paymentIntent->processAuthenticatedOrder($order, $paymentIntent);
-            return $paymentIntent;
         }
-
-        return null;
     }
 }

@@ -4,11 +4,6 @@ namespace StripeIntegration\Payments\Test\Integration\Frontend\CheckoutPage\Embe
 
 use PHPUnit\Framework\Constraint\StringContains;
 
-/**
- * Magento 2.3.7-p3 does not enable these at class level
- * @magentoAppIsolation enabled
- * @magentoDbIsolation enabled
- */
 class PlaceOrderTest extends \PHPUnit\Framework\TestCase
 {
     public function setUp(): void
@@ -56,22 +51,15 @@ class PlaceOrderTest extends \PHPUnit\Framework\TestCase
         $order = $this->tests->refreshOrder($order);
 
         // Assert order status, amount due
-        $this->assertEquals(0, $order->getTotalPaid());
-        $this->assertEquals($order->getGrandTotal(), $order->getTotalDue());
+        $this->assertEquals($order->getGrandTotal(), round($order->getTotalPaid(), 2));
+        $this->assertEquals(0, $order->getTotalDue());
         $this->assertEquals("processing", $order->getState());
         $this->assertEquals("processing", $order->getStatus());
-        $this->assertFalse($order->canCancel());
 
         // Assert Magento invoice, invoice items, invoice totals
         $this->assertEquals(1, $order->getInvoiceCollection()->count());
         $invoice = $order->getInvoiceCollection()->getFirstItem();
-        $this->assertEquals(\Magento\Sales\Model\Order\Invoice::STATE_OPEN, $invoice->getState());
-        $this->assertEquals(true, $invoice->canCancel());
-        $this->assertEquals(true, $invoice->canCapture()); // Should be able to capture offline, just in case webhooks fail
-
-        \Magento\TestFramework\Helper\Bootstrap::getInstance()->loadArea('adminhtml');
-        $this->assertEquals(false, $invoice->canCancel()); // In the admin, merchants should wait for abandoned carts until the cron job releases them
-        $this->assertEquals($order->getGrandTotal(), $invoice->getGrandTotal());
+        $this->assertEquals($order->getTotalPaid(), $invoice->getGrandTotal());
 
         // Stripe checks
         $this->assertNotEmpty($customer->subscriptions->data[0]->latest_invoice);

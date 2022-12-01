@@ -2,11 +2,6 @@
 
 namespace StripeIntegration\Payments\Test\Integration\Frontend\CheckoutPage\EmbeddedFlow\AuthorizeCapture\MixedTrial;
 
-/**
- * Magento 2.3.7-p3 does not enable these at class level
- * @magentoAppIsolation enabled
- * @magentoDbIsolation enabled
- */
 class MultiCurrencyRefundsTest extends \PHPUnit\Framework\TestCase
 {
     public function setUp(): void
@@ -44,7 +39,7 @@ class MultiCurrencyRefundsTest extends \PHPUnit\Framework\TestCase
         $invoicesCollection = $order->getInvoiceCollection();
         $this->assertEquals(1, $invoicesCollection->getSize());
         $invoice = $invoicesCollection->getFirstItem();
-        $this->assertEquals(\Magento\Sales\Model\Order\Invoice::STATE_PAID, $invoice->getState());
+        $this->assertEquals(\Magento\Sales\Model\Order\Invoice::STATE_OPEN, $invoice->getState());
 
         // Order checks
         $this->tests->compare($order->debug(), [
@@ -52,11 +47,11 @@ class MultiCurrencyRefundsTest extends \PHPUnit\Framework\TestCase
             "grand_total" => 26.90,
             "base_total_invoiced" => 31.66,
             "total_invoiced" => 26.90,
-            "base_total_paid" => 31.66,
-            "total_paid" => 26.90,
-            "base_total_due" => 0,
-            "total_due" => 0,
-            "total_refunded" => 13.45,
+            "base_total_paid" => "unset",
+            "total_paid" => 13.45,
+            "base_total_due" => 31.66,
+            "total_due" => 13.45,
+            "total_refunded" => "unset",
             "total_canceled" => "unset",
             "state" => "processing",
             "status" => "processing"
@@ -69,7 +64,7 @@ class MultiCurrencyRefundsTest extends \PHPUnit\Framework\TestCase
         $this->assertEquals(1, count($customer->subscriptions->data));
 
         // Expire the trial subscription
-        $ordersCount = $this->tests->getOrdersCount();
+        $ordersCount = $this->objectManager->get('Magento\Sales\Model\Order')->getCollection()->count();
         $subscription = $this->tests->endTrialSubscription($customer->subscriptions->data[0]->id);
 
         // Refresh the order object
@@ -85,10 +80,6 @@ class MultiCurrencyRefundsTest extends \PHPUnit\Framework\TestCase
         $invoice = $invoicesCollection->getFirstItem();
         $this->assertEquals(\Magento\Sales\Model\Order\Invoice::STATE_PAID, $invoice->getState());
 
-        // Credit memo checks
-        $creditmemoCollection = $order->getCreditmemosCollection();
-        $this->assertEquals(1, $creditmemoCollection->getSize());
-
         // Order checks
         $this->tests->compare($order->debug(), [
             "base_grand_total" => 31.66,
@@ -99,7 +90,7 @@ class MultiCurrencyRefundsTest extends \PHPUnit\Framework\TestCase
             "total_paid" => 26.90,
             "base_total_due" => 0,
             "total_due" => 0,
-            "total_refunded" => 13.45,
+            "total_refunded" => "unset",
             "total_canceled" => "unset",
             "state" => "processing",
             "status" => "processing"
@@ -109,30 +100,27 @@ class MultiCurrencyRefundsTest extends \PHPUnit\Framework\TestCase
         $this->assertTrue($order->canCreditmemo());
         $this->tests->refundOnline($invoice, ['simple-product' => 1], $baseShipping = 5);
 
+        // Trigger webhooks
+        // $this->tests->event()->trigger("charge.refunded", $paymentIntent->charges->data[0]->id);
+
         // Refresh the order object
         $order = $this->tests->refreshOrder($order);
 
         $this->tests->compare($order->debug(), [
-            "base_total_refunded" => $order->getBaseGrandTotal(),
-            "total_refunded" => $order->getGrandTotal(),
+            "base_total_refunded" => 15.83,
+            "total_refunded" => 13.45,
             "total_canceled" => "unset",
-            "state" => "closed",
-            "status" => "closed"
+            "state" => "processing",
+            "status" => "processing"
         ]);
 
-        // Refund the trial subscription via the 2nd order
-        $oldIncrementId = $order->getIncrementId();
-        $order = $this->tests->getLastOrder();
-        $this->assertNotEquals($oldIncrementId, $order->getIncrementId());
+        // Invoice checks
+        $invoicesCollection = $order->getInvoiceCollection();
+        $this->assertEquals(1, $invoicesCollection->getSize());
+        $this->assertEquals(\Magento\Sales\Model\Order\Invoice::STATE_PAID, $invoice->getState());
+
+        // Refund the trial subscription via the 1st order
         $this->assertTrue($order->canCreditmemo());
-        $invoice = $order->getInvoiceCollection()->getFirstItem();
-
-        if ($this->tests->magento("<", "2.4"))
-        {
-            // Magento 2.3.7-p3 does not perform a currency conversion on the tax_amount
-            $this->expectExceptionMessage("Could not refund payment: Requested a refund of €13.58, but the most amount that can be refunded online is €13.45.");
-        }
-
         $this->tests->refundOnline($invoice, ['simple-trial-monthly-subscription-product' => 1], $baseShipping = 5);
 
         // Refresh the order object
@@ -140,14 +128,16 @@ class MultiCurrencyRefundsTest extends \PHPUnit\Framework\TestCase
 
         // Order checks
         $this->tests->compare($order->debug(), [
-            "base_total_refunded" => 15.83,
-            "total_refunded" => 13.45,
+            "base_total_refunded" => 31.66,
+            "total_refunded" => 26.90,
             "total_canceled" => "unset",
             "state" => "closed",
             "status" => "closed"
         ]);
 
         $this->assertFalse($order->canCreditmemo()); // @todo: inverse rounding error, should be false
+
+        // @todo - check that the newly created order has also been closed
 
         // Stripe checks
         $charges = $stripe->charges->all(['limit' => 10, 'customer' => $customer->id]);

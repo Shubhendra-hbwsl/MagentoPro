@@ -35,21 +35,8 @@ class Checkout
     public function confirm($session, $order, $paymentMethod = "SuccessCard", $billingAddress = "NewYork")
     {
         // Build confirmation params
-        if ($paymentMethod == "sofort_success")
-        {
-            $params = [
-                'eid' => 'NA',
-                'expected_amount' => $session->amount_total,
-                'return_url' => $this->helper->getUrl('stripe/payment/index'),
-                'payment_method' => "pm_sofort_generatedSepaDebitIntentsSucceedGermany",
-                'expected_payment_method_type' => "sofort"
-            ];
-        }
-        else
-        {
-            $paymentMethod = $this->createPaymentMethod($paymentMethod, $billingAddress);
-            $params = $this->getParamsForPaymentMethod($paymentMethod, $session);
-        }
+        $paymentMethod = $this->createPaymentMethod($paymentMethod, $billingAddress);
+        $params = $this->getParamsForPaymentMethod($paymentMethod, $session);
 
         // Confirm the payment
         return $this->stripeConfig->getStripeClient()->request('post', "/v1/payment_pages/{$session->id}/confirm", $params, $opts = null);
@@ -62,40 +49,32 @@ class Checkout
         if (empty($paymentIntent->next_action))
             return true; // Authentication is not needed for this payment method
 
-        if (isset($paymentIntent->next_action->use_stripe_sdk->stripe_js))
-        {
-            $endpoint = $paymentIntent->next_action->use_stripe_sdk->stripe_js;
-        }
-        else if (isset($paymentIntent->next_action->redirect_to_url->url))
+        if (isset($paymentIntent->next_action->redirect_to_url->url))
         {
             $url = $paymentIntent->next_action->redirect_to_url->url;
 
             // Get the PM token
             preg_match('/authenticate\/([^\?]+)\?/', $url, $matches);
-            if (empty($matches[1]))
-            {
-                // The URL will be https://pm-redirects.stripe.com/authorize/acct_xxxxx/pa_nonce_xxxxx
-                // The Authorize button will be https://pm-redirects.stripe.com/return/acct_xxxxx/pa_nonce_xxxxx?success=true
-                throw new \Exception("URL $url does not include an /authenticate endpoint");
-            }
-            else
-            {
-                $this->tests->assertNotEmpty($matches[1]);
-                $token = $matches[1];
+            $this->tests->assertNotEmpty($matches[1]);
+            $token = $matches[1];
 
-                // Get the client secret
-                preg_match('/client_secret=(.+)/', $url, $matches);
-                $this->tests->assertNotEmpty($matches[1]);
-                $clientSecret = $matches[1];
+            // Get the client secret
+            preg_match('/client_secret=(.+)/', $url, $matches);
+            $this->tests->assertNotEmpty($matches[1]);
+            $clientSecret = $matches[1];
 
-                if (strpos($adapter, "Card") !== false) // SuccessCard, ElevatedRiskCard etc
-                    $adapter = "card";
+            if (strpos($adapter, "Card") !== false) // SuccessCard, ElevatedRiskCard etc
+                $adapter = "card";
 
-                $endpoint = "https://hooks.stripe.com/adapter/$adapter/redirect/complete/$token/$clientSecret?success=true";
-            }
+            $endpoint = "https://hooks.stripe.com/adapter/$adapter/redirect/complete/$token/$clientSecret?success=true";
+        }
+        else if (isset($paymentIntent->next_action->use_stripe_sdk->stripe_js))
+        {
+            $endpoint = $paymentIntent->next_action->use_stripe_sdk->stripe_js;
         }
         else
         {
+            \StripeIntegration\Tests\Helper\Logger::print($paymentIntent);
             throw new \Exception("Cannot authenticate payment intent because it has no redirect url");
         }
 
@@ -125,7 +104,7 @@ class Checkout
                 $params['card'] = [
                     'number' => '4242424242424242',
                     'exp_month' => 7,
-                    'exp_year' => 2025,
+                    'exp_year' => 2022,
                     'cvc' => '314',
                 ];
                 break;
@@ -137,14 +116,6 @@ class Checkout
             case "sepa_debit":
                 $params["sepa_debit"] = [
                     'iban' => "DE89370400440532013000"
-                ];
-                break;
-            case "us_bank_account":
-                $params["us_bank_account"] = [
-                    'account_holder_type' => "individual",
-                    'account_number' => "0123456789",
-                    'account_type' => "savings",
-                    'routing_number' => "021000021"
                 ];
                 break;
             case "bacs_debit":

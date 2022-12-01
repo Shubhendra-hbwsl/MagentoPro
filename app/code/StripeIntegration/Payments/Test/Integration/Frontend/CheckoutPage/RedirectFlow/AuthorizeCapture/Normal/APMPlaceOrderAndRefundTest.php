@@ -2,11 +2,6 @@
 
 namespace StripeIntegration\Payments\Test\Integration\Frontend\RedirectFlow\AuthorizeCapture\Normal;
 
-/**
- * Magento 2.3.7-p3 does not enable these at class level
- * @magentoAppIsolation enabled
- * @magentoDbIsolation enabled
- */
 class APMPlaceOrderAndRefundTest extends \PHPUnit\Framework\TestCase
 {
     public function setUp(): void
@@ -26,9 +21,6 @@ class APMPlaceOrderAndRefundTest extends \PHPUnit\Framework\TestCase
      */
     public function testPlaceOrderAndMultipleMagentoRefunds($payment_method_type, $billing_address, $shipping_address, $pending)
     {
-        if (in_array($payment_method_type, ['p24', 'ideal', 'bancontact', 'sofort']))
-            $this->markTestIncomplete("Exception: URL https://pm-redirects.stripe.com/authorize/acct_xxx/pa_nonce_xxx does not include an /authenticate endpoint");
-
         $this->quote->create()
             ->setCustomer('Guest')
             ->setCart("Normal")
@@ -276,9 +268,6 @@ class APMPlaceOrderAndRefundTest extends \PHPUnit\Framework\TestCase
         if ($pending)
             return;
 
-        if (in_array($payment_method_type, ['p24', 'ideal', 'bancontact']))
-            $this->markTestIncomplete("Exception: URL https://pm-redirects.stripe.com/authorize/acct_xxx/pa_nonce_xxx does not include an /authenticate endpoint");
-
         $this->quote->create()
             ->setCustomer('Guest')
             ->setCart("Normal")
@@ -342,9 +331,6 @@ class APMPlaceOrderAndRefundTest extends \PHPUnit\Framework\TestCase
     {
         if ($pending)
             return;
-
-        if (in_array($payment_method_type, ['p24', 'ideal', 'bancontact']))
-            $this->markTestIncomplete("Exception: URL https://pm-redirects.stripe.com/authorize/acct_xxx/pa_nonce_xxx does not include an /authenticate endpoint");
 
         $this->quote->create()
             ->setCustomer('Guest')
@@ -442,14 +428,13 @@ class APMPlaceOrderAndRefundTest extends \PHPUnit\Framework\TestCase
                 "shipping_address" => "Berlin",
                 "pending" => false
             ],
-            // @todo EPS has a different redirect url format https://pm-redirects.stripe.com/authorize/acct_xxxxx/pa_nonce_xxxxx
-            // [
-            //     "payment_method_type" => "eps",
-            //     "billing_address" => "Berlin",
-            //     "shipping_address" => "Berlin",
-            //     "pending" => false
-            // ],
-            // @todo Giropay has a different redirect url format https://pm-redirects.stripe.com/authorize/acct_xxxxx/pa_nonce_xxxxx
+            [
+                "payment_method_type" => "eps",
+                "billing_address" => "Berlin",
+                "shipping_address" => "Berlin",
+                "pending" => false
+            ],
+            // @todo Giropay has a different redirect url format https://pm-redirects.stripe.com/authorize/acct_1Ig7MJHLyfDWKHBq/pa_nonce_LKGJj18iUXm40RpxvmOAxwyhcquEfxG
             // [
             //     "payment_method_type" => "giropay",
             //     "billing_address" => "Berlin",

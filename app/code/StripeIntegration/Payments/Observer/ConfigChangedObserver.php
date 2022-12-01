@@ -4,7 +4,6 @@ namespace StripeIntegration\Payments\Observer;
 
 use Magento\Framework\Event\ObserverInterface;
 use Magento\Framework\Event\Observer;
-use StripeIntegration\Payments\Exception\SilentException;
 
 class ConfigChangedObserver implements ObserverInterface
 {
@@ -25,7 +24,7 @@ class ConfigChangedObserver implements ObserverInterface
         $this->helperFactory = $helperFactory;
     }
 
-    public function execute(\Magento\Framework\Event\Observer $observer)
+    public function execute(Observer $observer)
     {
         // We use factories because this method is called from inside the Magento install scripts
         try
@@ -42,11 +41,6 @@ class ConfigChangedObserver implements ObserverInterface
                 else
                     $helper->addSuccess("Stripe webhooks have been re-configured successfully.");
             }
-        }
-        catch (SilentException $e)
-        {
-            if (!empty($helper) && $helper->isAdmin())
-                $helper->addError($e->getMessage());
         }
         catch (\Exception $e)
         {

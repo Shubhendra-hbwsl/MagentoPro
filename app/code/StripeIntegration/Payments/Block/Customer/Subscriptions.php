@@ -9,20 +9,18 @@ use StripeIntegration\Payments\Helper\Logger;
 
 class Subscriptions extends \Magento\Framework\View\Element\Template
 {
-    public $customerPaymentMethods = null;
+    public $customerCards = null;
     public $helper;
 
     public function __construct(
         \Magento\Framework\View\Element\Template\Context $context,
+        array $data = [],
         \StripeIntegration\Payments\Helper\Generic $helper,
-        \StripeIntegration\Payments\Helper\PaymentMethod $paymentMethodHelper,
         \StripeIntegration\Payments\Model\Config $config,
-        \StripeIntegration\Payments\Helper\Subscriptions $subscriptionsHelper,
-        array $data = []
+        \StripeIntegration\Payments\Helper\Subscriptions $subscriptionsHelper
     ) {
         $this->stripeCustomer = $helper->getCustomerModel();
         $this->helper = $helper;
-        $this->paymentMethodHelper = $paymentMethodHelper;
         $this->config = $config;
         $this->subscriptionsHelper = $subscriptionsHelper;
 
@@ -66,28 +64,20 @@ class Subscriptions extends \Magento\Framework\View\Element\Template
         }
     }
 
-    public function getSubscriptionDefaultPaymentMethod($sub)
+    public function getSubscriptionCard($sub)
     {
-        if (!empty($sub->default_payment_method))
-        {
-            $methods = [
-                $sub->default_payment_method->type => [
-                    $sub->default_payment_method
-                ]
-            ];
-            $formattedMethods = $this->paymentMethodHelper->formatPaymentMethods($methods);
-            return array_pop($formattedMethods);
-        }
+        if (!empty($sub->default_payment_method->type) && $sub->default_payment_method->type == 'card')
+            return $this->helper->convertPaymentMethodToCard($sub->default_payment_method);
 
         return null;
     }
 
-    public function getSubscriptionPaymentMethodId($sub)
+    public function getSubscriptionCardId($sub)
     {
-        $method = $this->getSubscriptionDefaultPaymentMethod($sub);
+        $card = $this->getSubscriptionCard($sub);
 
-        if ($method)
-            return $method['id'];
+        if ($card)
+            return $card->id;
         else
             return null;
     }
@@ -193,12 +183,17 @@ class Subscriptions extends \Magento\Framework\View\Element\Template
         }
     }
 
-    public function getCustomerPaymentMethods()
+    public function getCustomerCards()
     {
-        if (isset($this->customerPaymentMethods))
-            return $this->customerPaymentMethods;
+        if (isset($this->customerCards))
+            return $this->customerCards;
 
-        return $this->customerPaymentMethods = $this->stripeCustomer->getSavedPaymentMethods(\StripeIntegration\Payments\Helper\PaymentMethod::SUPPORTS_SUBSCRIPTIONS, true);
+        $this->customerCards = $this->stripeCustomer->getCustomerCards();
+
+        if (empty($this->customerCards))
+            $this->customerCards = []; // Set the variable to avoid unnecessary API calls
+
+        return $this->customerCards;
     }
 
     public function getStatus($sub)
@@ -315,5 +310,11 @@ class Subscriptions extends \Magento\Framework\View\Element\Template
             $data[] = $lines['country'];
 
         return implode(", ", $data);
+    }
+
+    public function hasEditableContent($subscription)
+    {
+        $lines = $this->getFormatedShippingLines($subscription);
+        return !empty($lines);
     }
 }

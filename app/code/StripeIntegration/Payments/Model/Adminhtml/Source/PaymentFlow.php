@@ -11,7 +11,7 @@ class PaymentFlow implements \Magento\Framework\Option\ArrayInterface
         return [
             [
                 'value' => 0,
-                'label' => __('Embed payment form into the native flow.')
+                'label' => __('Embed Stripe Elements into the native flow.')
             ],
             [
                 'value' => 1,

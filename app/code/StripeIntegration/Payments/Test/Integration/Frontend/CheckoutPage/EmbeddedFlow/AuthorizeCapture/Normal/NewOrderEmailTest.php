@@ -6,11 +6,6 @@ use Magento\Checkout\Model\Session as CheckoutSession;
 use Magento\Checkout\Model\SessionFactory as CheckoutSessionFactory;
 use PHPUnit\Framework\Constraint\StringContains;
 
-/**
- * Magento 2.3.7-p3 does not enable these at class level
- * @magentoAppIsolation enabled
- * @magentoDbIsolation enabled
- */
 class NewOrderEmailTest extends \PHPUnit\Framework\TestCase
 {
     public function setUp(): void
@@ -73,11 +68,14 @@ class NewOrderEmailTest extends \PHPUnit\Framework\TestCase
         );
 
         $message = $this->transportBuilder->getSentMessage();
-        $subject = __('Invoice for your %1 order', $order->getStore()->getFrontendName())->render();
+        $subject = __('Your %1 order confirmation', $order->getStore()->getFrontendName())->render();
         $assert = $this->logicalAnd(
             new StringContains($order->getBillingAddress()->getName()),
             new StringContains(
                 'Thank you for your order from ' . $order->getStore()->getFrontendName()
+            ),
+            new StringContains(
+                "Your Order <span class=\"no-link\">#{$order->getIncrementId()}</span>"
             )
         );
 

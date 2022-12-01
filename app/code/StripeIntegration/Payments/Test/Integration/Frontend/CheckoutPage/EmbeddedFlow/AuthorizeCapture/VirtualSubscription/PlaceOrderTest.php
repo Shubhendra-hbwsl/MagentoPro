@@ -6,11 +6,6 @@ use Magento\Checkout\Model\Session as CheckoutSession;
 use Magento\Checkout\Model\SessionFactory as CheckoutSessionFactory;
 use PHPUnit\Framework\Constraint\StringContains;
 
-/**
- * Magento 2.3.7-p3 does not enable these at class level
- * @magentoAppIsolation enabled
- * @magentoDbIsolation enabled
- */
 class PlaceOrderTest extends \PHPUnit\Framework\TestCase
 {
     public function setUp(): void

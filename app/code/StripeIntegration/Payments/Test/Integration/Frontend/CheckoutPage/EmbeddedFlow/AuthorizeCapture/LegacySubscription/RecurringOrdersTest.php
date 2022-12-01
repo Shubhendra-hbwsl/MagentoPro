@@ -2,11 +2,6 @@
 
 namespace StripeIntegration\Payments\Test\Integration\Frontend\CheckoutPage\EmbeddedFlow\AuthorizeCapture\LegacySubscription;
 
-/**
- * Magento 2.3.7-p3 does not enable these at class level
- * @magentoAppIsolation enabled
- * @magentoDbIsolation enabled
- */
 class RecurringOrdersTest extends \PHPUnit\Framework\TestCase
 {
     public function setUp(): void
@@ -58,10 +53,20 @@ class RecurringOrdersTest extends \PHPUnit\Framework\TestCase
             "email" => "joyce@example.com"
         ]);
 
+        try
+        {
+            $coupon = $this->tests->stripe()->coupons->delete("10percent");
+        }
+        catch (\Exception $e)
+        {
+
+        }
+
         $coupon = $this->tests->stripe()->coupons->create([
+          "id" => "10percent",
           "percent_off" => "10",
           "currency" => "USD",
-          "name" => "10pc Discount",
+          "name" => "10% Discount",
           "duration" => "forever"
         ]);
 
@@ -100,39 +105,12 @@ class RecurringOrdersTest extends \PHPUnit\Framework\TestCase
 
         $this->tests->stripe()->paymentMethods->attach($paymentMethod->id, ['customer' => $customer->id]);
 
-        $taxPercent = "8.25";
-        $rates = $this->tests->stripe()->taxRates->all(['limit' => 00]);
-        $shippingTaxRate = $productTaxRate = null;
-        foreach ($rates->autoPagingIterator() as $rate)
-        {
-            if ($rate->percentage == 0 && !$rate->inclusive)
-            {
-                $shippingTaxRate = $rate;
-            }
-
-            if ($rate->percentage == $taxPercent && !$rate->inclusive)
-            {
-                $productTaxRate = $rate;
-            }
-        }
-        if (!$shippingTaxRate)
-        {
-            $shippingTaxRate = $this->tests->stripe()->taxRates->create([
-                "display_name" => "VAT",
-                "description" => "0% VAT",
-                "percentage" => "0",
-                "inclusive" => "false"
-            ]);
-        }
-        if (!$productTaxRate)
-        {
-            $productTaxRate = $this->tests->stripe()->taxRates->create([
-                "display_name" => "VAT",
-                "description" => $taxPercent . "% VAT",
-                "percentage" => $taxPercent,
-                "inclusive" => "false"
-            ]);
-        }
+        $shippingTaxRate = $this->tests->stripe()->taxRates->create([
+            "display_name" => "VAT",
+            "description" => "0% VAT",
+            "percentage" => "0",
+            "inclusive" => "false"
+        ]);
 
         $shippingLineItem = $this->tests->stripe()->invoiceItems->create([
             "customer" => $customer->id,
@@ -141,6 +119,15 @@ class RecurringOrdersTest extends \PHPUnit\Framework\TestCase
             "description" => "Shipping",
             "discountable" => "false",
             "tax_rates" => [ $shippingTaxRate->id ]
+        ]);
+
+        $taxPercent = "8.25";
+
+        $productTaxRate = $this->tests->stripe()->taxRates->create([
+            "display_name" => "VAT",
+            "description" => $taxPercent . "% VAT",
+            "percentage" => $taxPercent,
+            "inclusive" => "false"
         ]);
 
         $metadata = [
@@ -168,7 +155,7 @@ class RecurringOrdersTest extends \PHPUnit\Framework\TestCase
             "metadata" => $metadata,
             "expand" => [ "latest_invoice.payment_intent" ],
             "default_tax_rates" => [ $productTaxRate->id ],
-            "coupon" => $coupon->id
+            "coupon" => "10percent"
         ]);
 
         $recurringShippingLineItem = $this->tests->stripe()->invoiceItems->create([

@@ -26,9 +26,10 @@ class OrderObserver extends AbstractDataAssignObserver
     }
 
     /**
+     * @param Observer $observer
      * @return void
      */
-    public function execute(\Magento\Framework\Event\Observer $observer)
+    public function execute(Observer $observer)
     {
         $order = $observer->getEvent()->getOrder();
         $eventName = $observer->getEvent()->getName();
@@ -51,5 +52,12 @@ class OrderObserver extends AbstractDataAssignObserver
 
         if ($payment->getAdditionalInformation('stripe_outcome_type') == "manual_review")
             $this->helper->holdOrder($order)->save();
+
+        if ($payment->getAdditionalInformation('authentication_pending'))
+        {
+            $comment = __("Customer authentication is pending for this order.");
+            $order->addStatusToHistory($status = \Magento\Sales\Model\Order::STATE_PENDING_PAYMENT, $comment, $isCustomerNotified = false);
+            $this->helper->saveOrder($order);
+        }
     }
 }

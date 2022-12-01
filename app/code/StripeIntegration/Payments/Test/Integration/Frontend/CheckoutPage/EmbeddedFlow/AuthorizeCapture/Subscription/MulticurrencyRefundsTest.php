@@ -2,11 +2,6 @@
 
 namespace StripeIntegration\Payments\Test\Integration\Frontend\CheckoutPage\EmbeddedFlow\AuthorizeCapture\Subscription;
 
-/**
- * Magento 2.3.7-p3 does not enable these at class level
- * @magentoAppIsolation enabled
- * @magentoDbIsolation enabled
- */
 class MulticurrencyRefundsTest extends \PHPUnit\Framework\TestCase
 {
     public function setUp(): void
@@ -59,7 +54,7 @@ class MulticurrencyRefundsTest extends \PHPUnit\Framework\TestCase
         $this->assertEquals($creditMemo->getGrandTotal(), $order->getGrandTotal());
         $paymentIntent = $this->tests->stripe()->paymentIntents->retrieve($paymentIntent->id);
 
-        $grandTotal = round(floatval($order->getGrandTotal()) * 100);
+        $grandTotal = round($order->getGrandTotal() * 100);
 
         $this->tests->compare($paymentIntent->charges->data[0], [
             "amount" => $grandTotal,

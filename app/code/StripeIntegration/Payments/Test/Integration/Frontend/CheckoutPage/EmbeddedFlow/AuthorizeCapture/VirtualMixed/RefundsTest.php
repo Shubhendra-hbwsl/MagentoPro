@@ -2,11 +2,6 @@
 
 namespace StripeIntegration\Payments\Test\Integration\Frontend\CheckoutPage\EmbeddedFlow\AuthorizeCapture\VirtualMixed;
 
-/**
- * Magento 2.3.7-p3 does not enable these at class level
- * @magentoAppIsolation enabled
- * @magentoDbIsolation enabled
- */
 class RefundsTest extends \PHPUnit\Framework\TestCase
 {
     public function setUp(): void
@@ -84,12 +79,7 @@ class RefundsTest extends \PHPUnit\Framework\TestCase
         $this->assertEquals(21.66, $order->getTotalRefunded());
         $this->assertEquals(0, $order->getTotalCanceled());
         $this->assertFalse($order->canCreditmemo());
-
-        if ($this->tests->magento("<", "2.4"))
-            $this->assertEquals("closed", $order->getState());
-        else
-            $this->assertEquals("complete", $order->getState()); // This seems like a bug in Magento 2.4.x. It might be a rounding error on the total_due amount
-
+        $this->assertEquals("complete", $order->getState());
         $this->assertEquals("closed", $order->getStatus());
 
         // Stripe checks

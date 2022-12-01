@@ -2,11 +2,6 @@
 
 namespace StripeIntegration\Payments\Test\Integration\Frontend\CheckoutPage\EmbeddedFlow\AuthorizeCapture;
 
-/**
- * Magento 2.3.7-p3 does not enable these at class level
- * @magentoAppIsolation enabled
- * @magentoDbIsolation enabled
- */
 class RefundsTest extends \PHPUnit\Framework\TestCase
 {
     public function setUp(): void
@@ -41,7 +36,7 @@ class RefundsTest extends \PHPUnit\Framework\TestCase
 
         // Order checks
         $this->assertEquals($order->getGrandTotal(), $order->getBaseGrandTotal());
-        $this->assertEquals(0, $order->getTotalInvoiced());
+        $this->assertEquals($order->getGrandTotal(), $order->getTotalInvoiced());
         $this->assertEquals(0, $order->getTotalPaid());
         $this->assertEquals($order->getGrandTotal(), $order->getTotalDue());
         $this->assertEquals(0, $order->getTotalRefunded());
@@ -55,22 +50,18 @@ class RefundsTest extends \PHPUnit\Framework\TestCase
 
         // Order checks
         $this->assertEquals($order->getGrandTotal(), $order->getTotalInvoiced());
-        $this->assertEquals($order->getGrandTotal(), $order->getTotalPaid());
-        $this->assertEquals(0, $order->getTotalDue());
-        $this->assertEquals(15.83, $order->getTotalRefunded());
+        $this->assertEquals(15.83, $order->getTotalPaid());
+        $this->assertEquals(15.83, $order->getTotalDue());
+        $this->assertEquals(0, $order->getTotalRefunded());
         $this->assertEquals(0, $order->getTotalCanceled());
         $this->assertEquals("processing", $order->getState());
         $this->assertEquals("processing", $order->getStatus());
-        $this->assertFalse($order->canCancel());
-        $this->assertTrue($order->canCreditmemo()); // Because Simple Product was paid
 
         // Invoice checks
         $invoicesCollection = $order->getInvoiceCollection();
         $this->assertEquals(1, $invoicesCollection->count());
         $invoice = $invoicesCollection->getFirstItem();
-        $this->assertEquals(\Magento\Sales\Model\Order\Invoice::STATE_PAID, $invoice->getState());
-        $this->assertFalse($invoice->canCancel());
-        $this->assertFalse($invoice->canCapture()); // Offline capture should be possible
+        $this->assertEquals(\Magento\Sales\Model\Order\Invoice::STATE_OPEN, $invoice->getState());
 
         // Stripe checks
         $stripe = $this->stripeConfig->getStripeClient();
@@ -96,23 +87,19 @@ class RefundsTest extends \PHPUnit\Framework\TestCase
         $this->assertEquals($order->getGrandTotal(), $order->getTotalInvoiced());
         $this->assertEquals($order->getGrandTotal(), $order->getTotalPaid());
         $this->assertEquals(0, $order->getTotalDue());
-        $this->assertEquals(15.83, $order->getTotalRefunded());
+        $this->assertEquals(0, $order->getTotalRefunded());
         $this->assertEquals(0, $order->getTotalCanceled());
         $this->assertTrue($order->canCreditmemo());
         $this->assertEquals("processing", $order->getState());
         $this->assertEquals("processing", $order->getStatus());
-        $this->assertFalse($order->canCancel());
 
         // Invoice checks
         $invoicesCollection = $order->getInvoiceCollection();
         $this->assertEquals(1, $invoicesCollection->count());
         $invoice = $invoicesCollection->getFirstItem();
         $this->assertEquals(\Magento\Sales\Model\Order\Invoice::STATE_PAID, $invoice->getState());
-        $this->assertFalse($invoice->canCancel());
-        $this->assertFalse($invoice->canCapture());
-        $this->assertTrue($invoice->canRefund());
 
-        // Refund the order remainder
+        // Partially refund the order
         $this->tests->refundOnline($invoice, ['simple-product' => 1], $baseShipping = 5);
 
         // Refresh the order object
@@ -122,20 +109,17 @@ class RefundsTest extends \PHPUnit\Framework\TestCase
         $this->assertEquals($order->getGrandTotal(), $order->getTotalInvoiced());
         $this->assertEquals($order->getGrandTotal(), $order->getTotalPaid());
         $this->assertEquals(0, $order->getTotalDue());
-        $this->assertEquals($order->getGrandTotal(), $order->getTotalRefunded());
+        $this->assertEquals(15.83, $order->getTotalRefunded());
         $this->assertEquals(0, $order->getTotalCanceled());
-        $this->assertEquals("closed", $order->getState());
-        $this->assertEquals("closed", $order->getStatus());
+        $this->assertEquals("processing", $order->getState());
+        $this->assertEquals("processing", $order->getStatus());
 
         // Refund the trial subscription
-        $newOrder = $this->tests->getLastOrder();
-        $this->assertNotEquals($order->getIncrementId(), $newOrder->getIncrementId());
-        $this->assertTrue($newOrder->canCreditmemo());
-        $invoice = $newOrder->getInvoiceCollection()->getFirstItem();
+        $this->assertTrue($order->canCreditmemo());
         $this->tests->refundOnline($invoice, ['simple-trial-monthly-subscription-product' => 1], $baseShipping = 5);
 
         // Refresh the order object
-        $order = $this->tests->refreshOrder($newOrder);
+        $order = $this->tests->refreshOrder($order);
 
         // Order checks
         $this->assertEquals($order->getGrandTotal(), $order->getTotalInvoiced());

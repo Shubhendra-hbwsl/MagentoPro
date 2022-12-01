@@ -22,7 +22,7 @@ class InitialFeeToOrder
         QuoteAddressToOrder $subject,
         \Closure $proceed,
         QuoteAddress $quoteAddress,
-        $data = []
+        array $data = []
     ) {
         return $this->extensionManagement->setFromAddressData($proceed($quoteAddress, $data), $quoteAddress);
     }

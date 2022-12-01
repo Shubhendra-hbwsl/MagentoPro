@@ -54,8 +54,6 @@ class Collection extends \Magento\Framework\Model\ResourceModel\Db\Collection\Ab
         foreach ($collection as $webhook)
         {
             $webhook->setLastEvent(time());
-            if (!$webhook->getActive())
-                $webhook->setActive(1);
         }
 
         $collection->save();

@@ -4,17 +4,11 @@ namespace StripeIntegration\Payments\Plugin\Sales\Model;
 
 class Invoice
 {
-    protected $transactions = [];
-
     public function __construct(
-        \Magento\Sales\Api\Data\TransactionSearchResultInterfaceFactory $transactionSearchResultFactory,
-        \Magento\Catalog\Model\ProductFactory $productFactory,
-        \StripeIntegration\Payments\Helper\Data $dataHelper
+        \Magento\Catalog\Model\ProductFactory $productFactory
     )
     {
-        $this->transactionSearchResultFactory = $transactionSearchResultFactory;
         $this->productFactory = $productFactory;
-        $this->dataHelper = $dataHelper;
     }
 
     public function aroundCanCapture($subject, \Closure $proceed)
@@ -23,41 +17,10 @@ class Invoice
         return /* !$this->hasSubscriptions($subject) && */ $proceed();
     }
 
-    public function getTransactions($order)
-    {
-        if (isset($this->transactions[$order->getId()]))
-            return $this->transactions[$order->getId()];
-
-        $transactions = $this->transactionSearchResultFactory->create()->addOrderIdFilter($order->getId());
-        return $this->transactions[$order->getId()] = $transactions;
-    }
-
     public function aroundCanCancel($subject, \Closure $proceed)
     {
-        $order = $subject->getOrder();
-
-        $isStripePaymentMethod = (strpos($order->getPayment()->getMethod(), "stripe_") === 0);
-
-        if (!$isStripePaymentMethod || !$this->dataHelper->isAdmin())
-            return $proceed();
-
-        $isPending = ($subject->getState() == \Magento\Sales\Model\Order\Invoice::STATE_OPEN);
-        $transactions = $this->getTransactions($order);
-        $hasTransactions = ($transactions->getSize() > 0);
-        $wasCaptured = false;
-        foreach ($transactions->getItems() as $transaction)
-        {
-            if ($transaction->getTxnType() == "capture")
-                $wasCaptured = true;
-        }
-
-        if ($isPending && $hasTransactions)
-            return false;
-
-        if ($wasCaptured)
-            return false;
-
-        return $proceed();
+        // Deprecated as of v2.7.1
+        return /* !$this->hasSubscriptions($subject) && */ $proceed();
     }
 
     public function isUnpaid($subject)

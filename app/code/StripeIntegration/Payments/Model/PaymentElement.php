@@ -13,9 +13,9 @@ class PaymentElement extends \Magento\Framework\Model\AbstractModel
     protected $clientSecrets = [];
 
     public function __construct(
-        \StripeIntegration\Payments\Helper\Data $dataHelper,
         \StripeIntegration\Payments\Helper\Generic $helper,
         \StripeIntegration\Payments\Helper\Compare $compare,
+        \StripeIntegration\Payments\Helper\Rollback $rollback,
         \StripeIntegration\Payments\Helper\Subscriptions $subscriptionsHelper,
         \StripeIntegration\Payments\Helper\Address $addressHelper,
         \StripeIntegration\Payments\Helper\CheckoutSession $checkoutSessionHelper,
@@ -34,9 +34,9 @@ class PaymentElement extends \Magento\Framework\Model\AbstractModel
         array $data = []
         )
     {
-        $this->dataHelper = $dataHelper;
         $this->helper = $helper;
         $this->compare = $compare;
+        $this->rollback = $rollback;
         $this->paymentIntentModelFactory = $paymentIntentModelFactory;
         $this->subscriptionsHelper = $subscriptionsHelper;
         $this->addressHelper = $addressHelper;
@@ -61,11 +61,6 @@ class PaymentElement extends \Magento\Framework\Model\AbstractModel
 
     public function getClientSecret($quoteId, $paymentMethodId = null, $order = null)
     {
-        if ($order && $order->getStoreId())
-        {
-            $this->config->reInitStripeFromStoreId($order->getStoreId()); // Necessary in order to load the quote
-        }
-
         $quote = $this->helper->loadQuoteById($quoteId);
 
         if (!$quote || !$quote->getId())
@@ -98,33 +93,24 @@ class PaymentElement extends \Magento\Framework\Model\AbstractModel
         try
         {
             $subscription = $this->subscriptionsHelper->updateSubscriptionFromQuote($quote, $this->getSubscriptionId(), $params);
+            $quoteDescription = $this->helper->getQuoteDescription($quote);
 
-            if ($subscription) // The cart may or may not include subscriptions
+            if (!empty($subscription->latest_invoice->payment_intent->id))
             {
-                $quoteDescription = $this->helper->getQuoteDescription($quote);
-
-                if (!empty($subscription->latest_invoice->payment_intent->id))
+                $paymentIntent = $subscription->latest_invoice->payment_intent;
+                $isSubscription = ($paymentIntent->description == "Subscription creation");
+                $isUpdatedCart = ((strpos($paymentIntent->description, "Cart ") === 0) && ($paymentIntent->description != $quoteDescription));
+                if ($isSubscription || $isUpdatedCart)
                 {
-                    $paymentIntent = $subscription->latest_invoice->payment_intent;
-                    $isSubscription = ($paymentIntent->description == "Subscription creation");
-                    $isUpdatedCart = ((strpos($paymentIntent->description, "Cart ") === 0) && ($paymentIntent->description != $quoteDescription));
-                    if ($isSubscription || $isUpdatedCart)
-                    {
-                        $this->config->getStripeClient()->paymentIntents->update($paymentIntent->id, [
-                            "description" => $this->helper->getQuoteDescription($quote)
-                        ]);
-                    }
+                    $this->config->getStripeClient()->paymentIntents->update($paymentIntent->id, [
+                        "description" => $this->helper->getQuoteDescription($quote)
+                    ]);
                 }
-
-                $this->updateFromSubscription($subscription);
             }
 
+            $this->updateFromSubscription($subscription);
+
             $this->subscription = $subscription;
-        }
-        catch (\Stripe\Exception\InvalidRequestException $e)
-        {
-            // Likely: You cannot combine currencies on a single customer. This customer has had a subscription, coupon, or invoice item with currency usd
-            throw $e;
         }
         catch (\Exception $e)
         {
@@ -141,18 +127,11 @@ class PaymentElement extends \Magento\Framework\Model\AbstractModel
         if ($params['amount'] == 0)
         {
             if (!empty($subscription->latest_invoice->payment_intent->client_secret))
-            {
                 $paymentIntent = $subscription->latest_invoice->payment_intent;
-            }
             else if (!empty($subscription->pending_setup_intent->client_secret))
-            {
                 $setupIntent = $subscription->pending_setup_intent;
-            }
             else
-            {
-                // A 100% discount coupon may have been applied
-                return null;
-            }
+                throw new \Exception("No payment or setup intent on subscription");
         }
         // We have a mixed cart
         else if ($params['amount'] > 0 && !empty($subscription))
@@ -238,14 +217,10 @@ class PaymentElement extends \Magento\Framework\Model\AbstractModel
         else
         {
             // Update any existing payment intents
-            $paymentIntent = $paymentIntentModel->loadFromCache($params, $quote, $order, $this->getPaymentIntentId());
+            $paymentIntent = $paymentIntentModel->loadFromCache($params, $quote, $order);
             if (empty($paymentIntent) && $params['amount'] > 0)
                 throw new LocalizedException(__("The cart details have changed. Please refresh the page and try again (1)."));
         }
-
-        // Upon order placement, a customer is always created in Stripe
-        $this->customer->updateFromOrder($order);
-        $params['customer'] = $this->customer->getStripeId();
 
         if ($paymentIntent)
         {
@@ -307,28 +282,15 @@ class PaymentElement extends \Magento\Framework\Model\AbstractModel
         return ($updateParams ? $updateParams : []);
     }
 
-    public function getSupportedPaymentMethodTypes()
-    {
-        if ($this->paymentIntent && !empty($this->paymentIntent->payment_method_types))
-        {
-            return $this->paymentIntent->payment_method_types;
-        }
-        else if ($this->setupIntent && !empty($this->setupIntent->payment_method_types))
-        {
-            return $this->setupIntent->payment_method_types;
-        }
-        else
-        {
-            return [];
-        }
-    }
-
     public function getSavedPaymentMethods($quoteId = null)
     {
         $this->mustBeInitialized();
         $customer = $this->helper->getCustomerModel();
 
         if (!$customer->getStripeId())
+            return [];
+
+        if (empty($this->paymentIntent->payment_method_types))
             return [];
 
         $quote = $this->helper->getQuote($quoteId);
@@ -338,12 +300,21 @@ class PaymentElement extends \Magento\Framework\Model\AbstractModel
         if (!$quoteId)
             $quoteId = $quote->getId();
 
-        $supportedPaymentMethodTypes = $this->getSupportedPaymentMethodTypes();
-        $supportedSavedPaymentMethodTypes = array_intersect($supportedPaymentMethodTypes, \StripeIntegration\Payments\Helper\PaymentMethod::CAN_BE_SAVED_ON_SESSION);
-
+        $supportedPaymentMethodTypes = $this->paymentIntent->payment_method_types;
+        $supportedSavedPaymentMethodTypes = array_intersect($supportedPaymentMethodTypes, [
+            'card',
+            'alipay',
+            'au_becs_debit',
+            'boleto',
+            'acss_debit',
+            'sepa_debit',
+        ]);
         if ($this->helper->hasSubscriptions($quote))
         {
-            $supportedSavedPaymentMethodTypes = array_intersect($supportedSavedPaymentMethodTypes, \StripeIntegration\Payments\Helper\PaymentMethod::SUPPORTS_SUBSCRIPTIONS);
+            $supportedSavedPaymentMethodTypes = array_intersect($supportedSavedPaymentMethodTypes, [
+                'card',
+                'sepa_debit'
+            ]);
         }
 
         $savedMethods = $customer->getSavedPaymentMethods($supportedSavedPaymentMethodTypes, true);
@@ -383,22 +354,8 @@ class PaymentElement extends \Magento\Framework\Model\AbstractModel
                 return $confirmationObject;
 
             $confirmParams = $paymentIntentModel->getConfirmParams($order, $confirmationObject);
-
-            try
-            {
-                $result = $this->config->getStripeClient()->paymentIntents->confirm($confirmationObject->id, $confirmParams);
-                $this->paymentIntent = $result;
-            }
-            catch (\Stripe\Exception\InvalidRequestException $e)
-            {
-                if (!$this->dataHelper->isMOTOError($e->getError()))
-                    throw $e;
-
-                $this->cache->save($value = "1", $key = "no_moto_gate", ["stripe_payments"], $lifetime = 6 * 60 * 60);
-                unset($confirmParams['payment_method_options']['card']['moto']);
-                $result = $this->config->getStripeClient()->paymentIntents->confirm($confirmationObject->id, $confirmParams);
-                $this->paymentIntent = $result;
-            }
+            $result = $this->config->getStripeClient()->paymentIntents->confirm($confirmationObject->id, $confirmParams);
+            $this->paymentIntent = $result;
         }
         else if ($confirmationObject = $this->getSetupIntent())
         {
@@ -407,23 +364,8 @@ class PaymentElement extends \Magento\Framework\Model\AbstractModel
                 return $confirmationObject;
 
             $confirmParams = $paymentIntentModel->getConfirmParams($order, $confirmationObject);
-            $confirmParams = $this->dataHelper->convertToSetupIntentConfirmParams($confirmParams);
-
-            try
-            {
-                $result = $this->config->getStripeClient()->setupIntents->confirm($confirmationObject->id, $confirmParams);
-                $this->setupIntent = $result;
-            }
-            catch (\Stripe\Exception\InvalidRequestException $e)
-            {
-                if (!$this->dataHelper->isMOTOError($e->getError()))
-                    throw $e;
-
-                $this->cache->save($value = "1", $key = "no_moto_gate", ["stripe_payments"], $lifetime = 6 * 60 * 60);
-                unset($confirmParams['payment_method_options']['card']['moto']);
-                $result = $this->config->getStripeClient()->setupIntents->confirm($confirmationObject->id, $confirmParams);
-                $this->setupIntent = $result;
-            }
+            $result = $this->config->getStripeClient()->setupIntents->confirm($confirmationObject->id, $confirmParams);
+            $this->setupIntent = $result;
         }
         else
             throw new \Exception("Could not confirm payment.");

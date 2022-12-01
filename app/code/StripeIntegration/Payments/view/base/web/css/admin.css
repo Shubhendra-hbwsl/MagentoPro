@@ -4,9 +4,6 @@
     margin-right: 1.5em;
     margin-bottom: 1em;
 }
-.wallet-button select[multiple] {
-    height: 10em;
-}
 /* Other  */
 .stripe.payment-info td {
     padding-right: 20px;
@@ -175,14 +172,6 @@ ul#payment_form_stripe_payments {
     color: #cd3d64;
 }
 
-/* Admin page card element */
-.admin__fieldset #stripe-card-element {
-    margin: 1.5em 0 1.5em 0;
-    border: 1px solid #adadad;
-    padding: 10px;
-    border-radius: 5px;
-}
-
 /* Saved payment methods */
 .stripe-saved-payment-methods img.payment-method-icon {
     max-height: 32px;
@@ -190,8 +179,9 @@ ul#payment_form_stripe_payments {
     top: -2px;
     position: relative;
 }
-.stripe-saved-payment-methods a.action-add {
-    float: right;
+.stripe-saved-payment-methods a.button.action-add {
+    margin-top: 1.5em;
+    cursor: pointer;
 }
 .stripe-saved-payment-methods {
     margin-bottom: 2em;
@@ -207,9 +197,6 @@ ul#payment_form_stripe_payments {
     cursor: pointer;
     margin-left: 10px;
     width: 100%;
-}
-.stripe-saved-payment-methods .stripe.mage-error {
-    margin-top: 1.2em;
 }
 
 /* Product Configuration */
@@ -233,4 +220,3 @@ ul#payment_form_stripe_payments {
 .stripe-expand.active > fieldset {
     display: none !important;
 }
-

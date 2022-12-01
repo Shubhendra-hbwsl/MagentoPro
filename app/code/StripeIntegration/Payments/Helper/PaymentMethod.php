@@ -6,56 +6,31 @@ use Magento\Framework\Exception\LocalizedException;
 
 class PaymentMethod
 {
-    protected $methodDetails = [];
+    protected $icons = [];
     protected $themeModel = null;
-    const CAN_BE_SAVED_ON_SESSION = [
-        'acss_debit',
-        'au_becs_debit',
-        'boleto',
-        'card',
-        'sepa_debit',
-        'us_bank_account'
-    ];
-    const CAN_BE_SAVED_OFF_SESSION = [ // Do not add methods that can be saved on_session here, see Model/PaymentIntent.php::getPaymentMethodOptions()
-        'bancontact',
-        'ideal',
-        'sofort'
-    ];
-    const SUPPORTS_SUBSCRIPTIONS = [
-        'card',
-        'sepa_debit',
-        'us_bank_account'
-    ];
-    const SETUP_INTENT_PAYMENT_METHOD_OPTIONS = [
-        'acss_debit',
-        'card',
-        'sepa_debit',
-        'us_bank_account'
-    ];
 
     public function __construct(
         \Magento\Framework\App\RequestInterface $request,
         \Magento\Framework\View\Asset\Repository $assetRepo,
         \Magento\Framework\App\Config\ScopeConfigInterface $scopeConfig,
         \Magento\Store\Model\StoreManagerInterface $storeManager,
-        \Magento\Framework\View\Design\Theme\ThemeProviderInterface $themeProvider,
-        \StripeIntegration\Payments\Helper\Data $dataHelper
+        \Magento\Framework\View\Design\Theme\ThemeProviderInterface $themeProvider
     ) {
         $this->request = $request;
         $this->assetRepo = $assetRepo;
         $this->scopeConfig = $scopeConfig;
         $this->storeManager = $storeManager;
         $this->themeProvider = $themeProvider;
-        $this->dataHelper = $dataHelper;
     }
 
     public function getCardIcon($brand)
     {
-        $icon = $this->getPaymentMethodIcon($brand);
-        if ($icon)
-            return $icon;
+        $icons = $this->getPaymentMethodIcons();
 
-        return $this->getPaymentMethodIcon('generic');
+        if (isset($icons[$brand]))
+            return $icons[$brand];
+
+        return $icons['generic'];
     }
 
     public function getCardLabel($card, $hideLast4 = false)
@@ -71,38 +46,39 @@ class PaymentMethod
 
     protected function getCardName($brand)
     {
-        if (empty($brand))
-            return "Card";
-
-        $details = $this->getPaymentMethodDetails();
-        if (isset($details[$brand]))
-            return $details[$brand]['name'];
-
-        return ucfirst($brand);
+        switch ($brand) {
+            case 'visa': return "Visa";
+            case 'amex': return "American Express";
+            case 'mastercard': return "MasterCard";
+            case 'discover': return "Discover";
+            case 'diners': return "Diners Club";
+            case 'jcb': return "JCB";
+            case 'unionpay': return "UnionPay";
+            case 'cartes_bancaires': return "Cartes Bancaires";
+            case null:
+            case "":
+                return "Card";
+            default:
+                return ucfirst($brand);
+        }
     }
 
-    public function getIcon($method, $format = null)
+    public function getIcon($method)
     {
+        $icons = $this->getPaymentMethodIcons();
+
         $type = $method->type;
 
-        $defaultIcon = $this->getPaymentMethodIcon($type);
-        if ($defaultIcon)
-        {
-            $icon = $defaultIcon;
-        }
-        else if ($type == "card" && !empty($method->card->brand))
-        {
-            $icon = $this->getCardIcon($method->card->brand);
-        }
+        if (isset($icons[$type]))
+            return $icons[$type];
+
+        if ($type == "card" && !empty($method->card->brand) && isset($icons[$method->card->brand]))
+            return $icons[$method->card->brand];
+
+        if ($type == "card")
+            return $icons['generic'];
         else
-        {
-            $icon = $this->getPaymentMethodIcon("bank");
-        }
-
-        if ($format)
-            $icon = str_replace(".svg", ".$format", $icon);
-
-        return $icon;
+            return $icons['bank'];
     }
 
     public function getLabel($method)
@@ -128,223 +104,92 @@ class PaymentMethod
         }
     }
 
-    public function getPaymentMethodIcon($code)
+    public function getPaymentMethodIcons()
     {
-        $details = $this->getPaymentMethodDetails();
-        if (isset($details[$code]))
-            return $details[$code]['icon'];
+        if (!empty($this->icons))
+            return $this->icons;
 
-        return null;
+        return $this->icons = [
+            // APMs
+            'acss_debit' => $this->getViewFileUrl("StripeIntegration_Payments::img/methods/bank.svg"),
+            'afterpay_clearpay' => $this->getViewFileUrl("StripeIntegration_Payments::img/methods/afterpay_clearpay.svg"),
+            'alipay' => $this->getViewFileUrl("StripeIntegration_Payments::img/methods/alipay.svg"),
+            'bacs_debit' => $this->getViewFileUrl("StripeIntegration_Payments::img/methods/bacs_debit.svg"),
+            'au_becs_debit' => $this->getViewFileUrl("StripeIntegration_Payments::img/methods/bank.svg"),
+            'bancontact' => $this->getViewFileUrl("StripeIntegration_Payments::img/methods/bancontact.svg"),
+            'boleto' => $this->getViewFileUrl("StripeIntegration_Payments::img/methods/boleto.svg"),
+            'eps' => $this->getViewFileUrl("StripeIntegration_Payments::img/methods/eps.svg"),
+            'fpx' => $this->getViewFileUrl("StripeIntegration_Payments::img/methods/fpx.svg"),
+            'giropay' => $this->getViewFileUrl("StripeIntegration_Payments::img/methods/giropay.svg"),
+            'grabpay' => $this->getViewFileUrl("StripeIntegration_Payments::img/methods/grabpay.svg"),
+            'ideal' => $this->getViewFileUrl("StripeIntegration_Payments::img/methods/ideal.svg"),
+            'klarna' => $this->getViewFileUrl("StripeIntegration_Payments::img/methods/klarna.svg"),
+            'paypal' => $this->getViewFileUrl("StripeIntegration_Payments::img/methods/paypal.svg"),
+            'multibanco' => $this->getViewFileUrl("StripeIntegration_Payments::img/methods/multibanco.svg"),
+            'p24' => $this->getViewFileUrl("StripeIntegration_Payments::img/methods/p24.svg"),
+            'sepa' => $this->getViewFileUrl("StripeIntegration_Payments::img/methods/sepa_debit.svg"),
+            'sepa_debit' => $this->getViewFileUrl("StripeIntegration_Payments::img/methods/sepa_debit.svg"),
+            'sepa_credit' => $this->getViewFileUrl("StripeIntegration_Payments::img/methods/sepa_credit.svg"),
+            'sofort' => $this->getViewFileUrl("StripeIntegration_Payments::img/methods/klarna.svg"),
+            'wechat' => $this->getViewFileUrl("StripeIntegration_Payments::img/methods/wechat.svg"),
+            'ach' => $this->getViewFileUrl("StripeIntegration_Payments::img/methods/ach.svg"),
+            'oxxo' => $this->getViewFileUrl("StripeIntegration_Payments::img/methods/oxxo.svg"),
+            'bank' => $this->getViewFileUrl("StripeIntegration_Payments::img/methods/bank.svg"),
+
+            // Cards
+            'amex' => $this->getViewFileUrl("StripeIntegration_Payments::img/cards/amex.svg"),
+            'cartes_bancaires' => $this->getViewFileUrl("StripeIntegration_Payments::img/cards/cartes_bancaires.svg"),
+            'diners' => $this->getViewFileUrl("StripeIntegration_Payments::img/cards/diners.svg"),
+            'discover' => $this->getViewFileUrl("StripeIntegration_Payments::img/cards/discover.svg"),
+            'generic' => $this->getViewFileUrl("StripeIntegration_Payments::img/cards/generic.svg"),
+            'jcb' => $this->getViewFileUrl("StripeIntegration_Payments::img/cards/jcb.svg"),
+            'mastercard' => $this->getViewFileUrl("StripeIntegration_Payments::img/cards/mastercard.svg"),
+            'visa' => $this->getViewFileUrl("StripeIntegration_Payments::img/cards/visa.svg")
+        ];
     }
 
     public function getPaymentMethodName($code)
     {
-        $details = $this->getPaymentMethodDetails();
-
-        if (isset($details[$code]))
-            return $details[$code]['name'];
-
-        return ucwords(str_replace("_", " ", $code));
-    }
-
-    public function getCVCIcon()
-    {
-        return $this->getViewFileUrl("StripeIntegration_Payments::img/icons/cvc.svg");
-    }
-
-    public function getPaymentMethodDetails()
-    {
-        if (!empty($this->methodDetails))
-            return $this->methodDetails;
-
-        return $this->methodDetails = [
-            // APMs
-            'acss_debit' => [
-                'name' => "ACSS Direct Debit / Canadian PADs",
-                'icon' => $this->getViewFileUrl("StripeIntegration_Payments::img/methods/bank.svg")
-            ],
-            'afterpay_clearpay' => [
-                'name' => "Afterpay / Clearpay",
-                'icon' => $this->getViewFileUrl("StripeIntegration_Payments::img/methods/afterpay_clearpay.svg")
-            ],
-            'alipay' => [
-                'name' => "Alipay",
-                'icon' => $this->getViewFileUrl("StripeIntegration_Payments::img/methods/alipay.svg")
-            ],
-            'bacs_debit' => [
-                'name' => "BACS Direct Debit",
-                'icon' => $this->getViewFileUrl("StripeIntegration_Payments::img/methods/bacs_debit.svg")
-            ],
-            'au_becs_debit' => [
-                'name' => "BECS Direct Debit",
-                'icon' => $this->getViewFileUrl("StripeIntegration_Payments::img/methods/bank.svg")
-            ],
-            'bancontact' => [
-                'name' => "Bancontact",
-                'icon' => $this->getViewFileUrl("StripeIntegration_Payments::img/methods/bancontact.svg")
-            ],
-            'boleto' => [
-                'name' => "Boleto",
-                'icon' => $this->getViewFileUrl("StripeIntegration_Payments::img/methods/boleto.svg")
-            ],
-            'eps' => [
-                'name' => 'EPS',
-                'icon' => $this->getViewFileUrl("StripeIntegration_Payments::img/methods/eps.svg")
-            ],
-            'fpx' => [
-                'name' => "FPX",
-                'icon' => $this->getViewFileUrl("StripeIntegration_Payments::img/methods/fpx.svg")
-            ],
-            'giropay' => [
-                'name' => "Giropay",
-                'icon' => $this->getViewFileUrl("StripeIntegration_Payments::img/methods/giropay.svg")
-            ],
-            'grabpay' => [
-                'name' => "GrabPay",
-                'icon' => $this->getViewFileUrl("StripeIntegration_Payments::img/methods/grabpay.svg")
-            ],
-            'ideal' => [
-                'name' => "iDEAL",
-                'icon' => $this->getViewFileUrl("StripeIntegration_Payments::img/methods/ideal.svg")
-            ],
-            'klarna' => [
-                'name' => "Klarna",
-                'icon' => $this->getViewFileUrl("StripeIntegration_Payments::img/methods/klarna.svg")
-            ],
-            'konbini' => [
-                'name' => "Konbini",
-                'icon' => $this->getViewFileUrl("StripeIntegration_Payments::img/methods/konbini.svg")
-            ],
-            'paypal' => [
-                'name' => "PayPal",
-                'icon' => $this->getViewFileUrl("StripeIntegration_Payments::img/methods/paypal.svg")
-            ],
-            'multibanco' => [
-                'name' => "Multibanco",
-                'icon' => $this->getViewFileUrl("StripeIntegration_Payments::img/methods/multibanco.svg")
-            ],
-            'p24' => [
-                'name' => "P24",
-                'icon' => $this->getViewFileUrl("StripeIntegration_Payments::img/methods/p24.svg")
-            ],
-            'sepa_debit' => [
-                'name' => "SEPA Direct Debit",
-                'icon' => $this->getViewFileUrl("StripeIntegration_Payments::img/methods/sepa_debit.svg")
-            ],
-            'sepa_credit' => [
-                'name' => "SEPA Credit Transfer",
-                'icon' => $this->getViewFileUrl("StripeIntegration_Payments::img/methods/sepa_credit.svg")
-            ],
-            'sofort' => [
-                'name' => "SOFORT",
-                'icon' => $this->getViewFileUrl("StripeIntegration_Payments::img/methods/klarna.svg")
-            ],
-            'wechat' => [
-                'name' => "WeChat Pay",
-                'icon' => $this->getViewFileUrl("StripeIntegration_Payments::img/methods/wechat.svg")
-            ],
-            'ach_debit' => [
-                'name' => "ACH Direct Debit",
-                'icon' => $this->getViewFileUrl("StripeIntegration_Payments::img/methods/bank.svg")
-            ],
-            'us_bank_account' => [ // ACHv2
-                'name' => "ACH Direct Debit",
-                'icon' => $this->getViewFileUrl("StripeIntegration_Payments::img/methods/bank.svg")
-            ],
-            'oxxo' => [
-                'name' => "OXXO",
-                'icon' => $this->getViewFileUrl("StripeIntegration_Payments::img/methods/oxxo.svg")
-            ],
-            'paynow' => [
-                'name' => "PayNow",
-                'icon' => $this->getViewFileUrl("StripeIntegration_Payments::img/methods/paynow.svg")
-            ],
-            'bank' => [
-                'name' => "",
-                'icon' => $this->getViewFileUrl("StripeIntegration_Payments::img/methods/bank.svg")
-            ],
-
-            // Cards
-            'amex' => [
-                'name' => "American Express",
-                'icon' => $this->getViewFileUrl("StripeIntegration_Payments::img/cards/amex.svg")
-            ],
-            'cartes_bancaires' => [
-                'name' => "Cartes Bancaires",
-                'icon' => $this->getViewFileUrl("StripeIntegration_Payments::img/cards/cartes_bancaires.svg")
-            ],
-            'diners' => [
-                'name' => "Diners Club",
-                'icon' => $this->getViewFileUrl("StripeIntegration_Payments::img/cards/diners.svg")
-            ],
-            'discover' => [
-                'name' => "Discover",
-                'icon' => $this->getViewFileUrl("StripeIntegration_Payments::img/cards/discover.svg")
-            ],
-            'generic' => [
-                'name' => "",
-                'icon' => $this->getViewFileUrl("StripeIntegration_Payments::img/cards/generic.svg")
-            ],
-            'jcb' => [
-                'name' => "JCB",
-                'icon' => $this->getViewFileUrl("StripeIntegration_Payments::img/cards/jcb.svg")
-            ],
-            'mastercard' => [
-                'name' => "MasterCard",
-                'icon' => $this->getViewFileUrl("StripeIntegration_Payments::img/cards/mastercard.svg")
-            ],
-            'visa' => [
-                'name' => "Visa",
-                'icon' => $this->getViewFileUrl("StripeIntegration_Payments::img/cards/visa.svg")
-            ],
-            'unionpay' => [
-                'name' => "UnionPay",
-                'icon' => $this->getViewFileUrl("StripeIntegration_Payments::img/cards/unionpay.svg")
-            ]
-        ];
-    }
-
-    public function isCard1NewerThanCard2($card1expMonth, $card1expYear, $card2expMonth, $card2expYear)
-    {
-
-    }
-
-    public function getPaymentMethodLabel($method)
-    {
-        $type = $method->type;
-        $methodName = $this->getPaymentMethodName($type);
-        $details = $method->{$type};
-
-        if ($type == "card")
+        switch ($code)
         {
-            return $this->getCardLabel($details);
-        }
-        else if (isset($details->last4))
-        {
-            return __("%1 •••• %2", $methodName, $details->last4);
-        }
-        else if (isset($details->tax_id)) // Boleto
-        {
-            return __("%1 - %2", $methodName, $details->tax_id);
-        }
-        else
-        {
-            return null;
+            case 'visa': return "Visa";
+            case 'amex': return "American Express";
+            case 'mastercard': return "MasterCard";
+            case 'discover': return "Discover";
+            case 'diners': return "Diners Club";
+            case 'jcb': return "JCB";
+            case 'unionpay': return "UnionPay";
+            case 'cartes_bancaires': return "Cartes Bancaires";
+            case 'bacs_debit': return "BACS Direct Debit";
+            case 'au_becs_debit': return "BECS Direct Debit";
+            case 'boleto': return "Boleto";
+            case 'acss_debit': return "ACSS Direct Debit / Canadian PADs";
+            case 'ach_debit': return "ACH Direct Debit";
+            case 'oxxo': return "OXXO";
+            case 'klarna': return "Klarna";
+            case 'sepa': return "SEPA Direct Debit";
+            case 'sepa_debit': return "SEPA Direct Debit";
+            case 'sepa_credit': return "SEPA Credit Transfer";
+            case 'sofort': return "SOFORT";
+            case 'ideal': return "iDEAL";
+            case 'paypal': return "PayPal";
+            case 'wechat': return "WeChat Pay";
+            case 'alipay': return "Alipay";
+            case 'grabpay': return "GrabPay";
+            case 'afterpay_clearpay': return "Afterpay / Clearpay";
+            case 'multibanco': return "Multibanco";
+            case 'p24': return "P24";
+            case 'giropay': return "Giropay";
+            case 'eps': return "EPS";
+            case 'bancontact': return "Bancontact";
+            default:
+                return ucwords(str_replace("_", " ", $code));
         }
     }
 
     public function formatPaymentMethods($methods)
     {
         $savedMethods = [];
-
-        if ($this->dataHelper->getConfigData("payment/stripe_payments/cvc_code") == "new_saved_cards")
-        {
-            $cvc = 1;
-        }
-        else
-        {
-            $cvc = 0;
-        }
 
         foreach ($methods as $type => $methodList)
         {
@@ -357,57 +202,75 @@ class PaymentMethod
                     {
                         $details = $method->card;
                         $key = $details->fingerprint;
-
-                        if (isset($savedMethods[$key]) && $savedMethods[$key]['created'] > $method->created)
-                            continue;
-
-                        $label = $this->getPaymentMethodLabel($method);
-
                         $savedMethods[$key] = [
-                            "id" => $method->id,
-                            "created" => $method->created,
                             "type" => $type,
-                            "fingerprint" => $details->fingerprint,
-                            "label" => $label,
+                            "label" => $this->getCardLabel($details),
                             "value" => $method->id,
-                            "icon" => $this->getCardIcon($details->brand),
-                            "cvc" => $cvc,
-                            "brand" => $details->brand,
-                            "exp_month" => $details->exp_month,
-                            "exp_year" => $details->exp_year,
+                            "icon" => $this->getCardIcon($details->brand)
                         ];
                     }
                     break;
-                default:
+                case 'sepa_debit':
                     foreach ($methodList as $method)
                     {
-                        $details = $method->{$type};
-                        if (empty($details->fingerprint) || empty($details->last4))
-                            continue;
-
-                        $icon = $this->getPaymentMethodIcon($type);
-                        if (!$icon)
-                            $icon = $this->getPaymentMethodIcon("bank");
-
+                        $details = $method->sepa_debit;
                         $key = $details->fingerprint;
-
-                        if (isset($savedMethods[$key]) && $savedMethods[$key]['created'] > $method->created)
-                            continue;
-
-                        $label = $this->getPaymentMethodLabel($method);
-                        if (empty($label))
-                            continue;
-
                         $savedMethods[$key] = [
-                            "id" => $method->id,
-                            "created" => $method->created,
                             "type" => $type,
-                            "fingerprint" => $details->fingerprint,
-                            "label" => $label,
+                            "label" => __("%1 •••• %2", $methodName, $details->last4),
                             "value" => $method->id,
-                            "icon" => $icon
+                            "icon" => $this->getCardIcon($type)
                         ];
                     }
+                    break;
+                case 'au_becs_debit':
+                    foreach ($methodList as $method)
+                    {
+                        $details = $method->au_becs_debit;
+                        $key = $details->fingerprint;
+                        $savedMethods[$key] = [
+                            "type" => $type,
+                            "label" => __("%1 •••• %2", $methodName, $details->last4),
+                            "value" => $method->id,
+                            "icon" => $this->getCardIcon($type)
+                        ];
+                    }
+                    break;
+                case 'acss_debit':
+                    foreach ($methodList as $method)
+                    {
+                        $details = $method->acss_debit;
+                        $key = $details->fingerprint;
+                        $savedMethods[$key] = [
+                            "type" => $type,
+                            "label" => __("%1 •••• %2", $methodName, $details->last4),
+                            "value" => $method->id,
+                            "icon" => $this->getCardIcon($type)
+                        ];
+                    }
+                    break;
+                case 'boleto':
+                    foreach ($methodList as $method)
+                    {
+                        $details = $method->boleto;
+                        $key = $details->fingerprint;
+                        $savedMethods[$key] = [
+                            "type" => $type,
+                            "label" => __("%1 - %2", $methodName, $details->tax_id),
+                            "value" => $method->id,
+                            "icon" => $this->getCardIcon($type)
+                        ];
+                    }
+                    break;
+                case 'alipay':
+                case 'bacs_debit':
+                case 'bancontact':
+                case 'au_becs_debit':
+                case 'ideal':
+                case 'acss_debit':
+                case 'sofort':
+                    break;
+                default:
                     break;
             }
         }
@@ -443,6 +306,7 @@ class PaymentMethod
             $this->storeManager->getStore()->getId()
         );
 
+        /** @var $theme \Magento\Framework\View\Design\ThemeInterface */
         $this->themeModel = $this->themeProvider->getThemeById($themeId);
 
         return $this->themeModel;

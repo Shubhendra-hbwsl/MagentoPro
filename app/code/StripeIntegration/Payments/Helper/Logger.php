@@ -68,4 +68,13 @@ class Logger
             // Errors cannot be logged...
         }
     }
+
+    public static function print($obj)
+    {
+        if (defined('STDIN'))
+        {
+            $data = Logger::getPrintableObject($obj);
+            // echo sprintf("\n>>> %s\n", print_r($data,true));
+        }
+    }
 }

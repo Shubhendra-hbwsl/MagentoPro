@@ -104,14 +104,14 @@ class Checkout extends \Magento\Payment\Block\ConfigurableInfo
         }
     }
 
-    public function getPaymentMethodIconUrl($format = null)
+    public function getPaymentMethodIconUrl()
     {
         $method = $this->getPaymentMethod();
 
         if (!$method)
             return null;
 
-        return $this->paymentMethodHelper->getIcon($method, $format);
+        return $this->paymentMethodHelper->getIcon($method);
     }
 
     public function getCheckoutSession()
@@ -119,23 +119,16 @@ class Checkout extends \Magento\Payment\Block\ConfigurableInfo
         if ($this->checkoutSession)
             return $this->checkoutSession;
 
-        try
-        {
-            $sessionId = $this->getInfo()->getAdditionalInformation("checkout_session_id");
-            $checkoutSession = $this->paymentsConfig->getStripeClient()->checkout->sessions->retrieve($sessionId, [
-                'expand' => [
-                    'payment_intent',
-                    'payment_intent.payment_method',
-                    'subscription',
-                    'subscription.default_payment_method',
-                    'subscription.latest_invoice.payment_intent'
-                ]
-            ]);
-        }
-        catch (\Exception $e)
-        {
-            return null;
-        }
+        $sessionId = $this->getInfo()->getAdditionalInformation("checkout_session_id");
+        $checkoutSession = $this->paymentsConfig->getStripeClient()->checkout->sessions->retrieve($sessionId, [
+            'expand' => [
+                'payment_intent',
+                'payment_intent.payment_method',
+                'subscription',
+                'subscription.default_payment_method',
+                'subscription.latest_invoice.payment_intent'
+            ]
+        ]);
 
         return $this->checkoutSession = $checkoutSession;
     }

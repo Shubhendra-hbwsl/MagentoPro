@@ -2,11 +2,6 @@
 
 namespace StripeIntegration\Payments\Test\Integration\Frontend\CheckoutPage\EmbeddedFlow\AuthorizeOnly\ManualInvoicing\MixedTrial;
 
-/**
- * Magento 2.3.7-p3 does not enable these at class level
- * @magentoAppIsolation enabled
- * @magentoDbIsolation enabled
- */
 class PlaceOrderTest extends \PHPUnit\Framework\TestCase
 {
     public function setUp(): void
@@ -45,7 +40,7 @@ class PlaceOrderTest extends \PHPUnit\Framework\TestCase
         $this->tests->compare($order->getData(), [
             "state" => "processing",
             "status" => "processing",
-            "base_total_paid" => 31.66
+            "base_total_paid" => 15.83
         ]);
     }
 }
